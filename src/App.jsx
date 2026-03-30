@@ -436,7 +436,7 @@ function MainApp({ session, onLogout }) {
   const ctx = {esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
 
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:P.bg,fontFamily:"'Nunito',sans-serif",maxWidth:480,margin:"0 auto",position:"relative"}}>
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:P.bg,fontFamily:"'Nunito',sans-serif",width:"100%",position:"relative"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
