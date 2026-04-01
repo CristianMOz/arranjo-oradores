@@ -426,7 +426,7 @@ function MainApp({ session, onLogout }) {
     {id:"saida",   icon:"📤",label:"Saída"},
     {id:"visitante",icon:"📥",label:"Visitante"},
     {id:"oradores", icon:"🎤",label:"Oradores"},
-    {id:"congs",    icon:"⛪",label:"Congs"},
+    {id:"congs",    icon:"🏠",label:"Congs"},
     {id:"esbocos",  icon:"📑",label:"Esboços"},
     {id:"relatorio",icon:"📊",label:"Relatório"},
   ];
@@ -795,7 +795,7 @@ function SaidaView({saidas,search,setModal}) {
               <div style={{width:46,height:46,borderRadius:14,background:ac,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15}}>{initials(s.oradorNome)}</div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:800,fontSize:14,color:P.text}}>{s.oradorNome}</div>
-                <div style={{fontSize:12,color:P.sub,marginTop:1}}>⛪ {s.cong}</div>
+                <div style={{fontSize:12,color:P.sub,marginTop:1}}>🏠 {s.cong}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
                 <span style={{background:st.bg,color:st.color,fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8}}>{st.label}</span>
@@ -863,7 +863,7 @@ function CongsView({congregacoes,saidas,visitantes,search,setModal}) {
             onClick={()=>setModal({type:"cong",data:c})}>
             <div style={{padding:"14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:44,height:44,borderRadius:14,background:col+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⛪</div>
+                <div style={{width:44,height:44,borderRadius:14,background:col+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🏠</div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:800,fontSize:14,color:P.text}}>{c.nome}</div>
                   <div style={{fontSize:11,color:P.sub,marginTop:2}}>{c.dia} · {c.hora}{c.contato?` · ${c.contato}`:""}</div>
@@ -1030,7 +1030,7 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
         linhas.push(`📅 *${v.data}*`);
         linhas.push(`🎤 Orador: ${v.orador}`);
         linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
-        linhas.push(`⛪ Congregação: ${v.cong}`);
+        linhas.push(`🏠 Congregação: ${v.cong}`);
       });
     }
     linhas.push(``);
@@ -1047,7 +1047,7 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
         linhas.push(`📅 *${s.data}*`);
         linhas.push(`🎤 Orador: ${s.oradorNome}`);
         linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
-        linhas.push(`⛪ Congregação: ${s.cong}`);
+        linhas.push(`🏠 Congregação: ${s.cong}`);
         if (cong && cong.end) linhas.push(`📍 Endereço: ${cong.end}`);
       });
     }
