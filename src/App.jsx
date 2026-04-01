@@ -333,13 +333,14 @@ const toBr = iso => { const p=iso.split("-"); return p.length===3?`${p[2]}/${p[1
 const sortKey = br => { const p=br.split("/"); return p.length===3?`${p[2]}${p[1]}${p[0]}`:""; };
 
 // ── APP ──────────────────────────────────────────────────
+const SENHA_APP = "oradores2026";
+
 export default function App() {
-  const hoje = new Date();
-  const [session, setSession] = useState(() => auth.getSession() || { guest: true, user: { email: "" } });
+  const [logado, setLogado] = useState(() => localStorage.getItem("arranjo_logado") === "true");
 
-  if (!session) return <LoginScreen onLogin={s => { auth.saveSession(s); setSession(s); }}/>;
+  if (!logado) return <LoginScreen onLogin={() => { localStorage.setItem("arranjo_logado","true"); setLogado(true); }}/>;
 
-  return <MainApp session={session} onLogout={() => { auth.clearSession(); setSession({ guest: true, user: { email: "" } }); }}/>;
+  return <MainApp session={{user:{email:""}}} onLogout={() => { localStorage.removeItem("arranjo_logado"); setLogado(false); }}/>;
 }
 
 function MainApp({ session, onLogout }) {
@@ -547,88 +548,43 @@ const navBtn = {background:P.slateL,border:"none",width:34,height:34,borderRadiu
 
 // ── LOGIN SCREEN ──────────────────────────────────────────
 function LoginScreen({ onLogin }) {
-  const [modo, setModo] = useState("login");
-  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [confirmSenha, setConfirmSenha] = useState("");
-  const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
-  const [msg, setMsg] = useState("");
 
-  const entrar = async () => {
-    setErro(""); setMsg("");
-    if (!email || !senha) return setErro("Preencha e-mail e senha");
-    setLoading(true);
-    try {
-      const session = await auth.signIn(email, senha);
-      onLogin(session);
-    } catch(e) { setErro(e.message); }
-    setLoading(false);
-  };
-
-  const cadastrar = async () => {
-    setErro(""); setMsg("");
-    if (!email || !senha) return setErro("Preencha e-mail e senha");
-    if (senha !== confirmSenha) return setErro("As senhas não coincidem");
-    if (senha.length < 6) return setErro("Senha deve ter pelo menos 6 caracteres");
-    setLoading(true);
-    try {
-      await auth.signUp(email, senha);
-      setMsg("Cadastro realizado! Verifique seu e-mail para confirmar a conta.");
-      setModo("login");
-    } catch(e) { setErro(e.message); }
-    setLoading(false);
+  const entrar = () => {
+    if (!senha) return setErro("Digite a senha de acesso");
+    if (senha !== SENHA_APP) return setErro("Senha incorreta");
+    onLogin();
   };
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:`linear-gradient(135deg,${P.sky},${P.teal})`,alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Nunito',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}@media(min-width:601px){html{zoom:1.25}}`}</style>
       <div style={{textAlign:"center",marginBottom:32,color:"#fff"}}>
         <div style={{fontSize:56,marginBottom:8}}>📋</div>
-        <div style={{fontWeight:900,fontSize:24,letterSpacing:-.5}}>Arranjo de Oradores</div>
-        <div style={{fontSize:13,opacity:.8,marginTop:4}}>Congregação Alto da Colina</div>
+        <div style={{fontWeight:900,fontSize:28,letterSpacing:-.5}}>Arranjo de Oradores</div>
+        <div style={{fontSize:15,opacity:.8,marginTop:4}}>Congregação Alto da Colina</div>
       </div>
-      <div style={{background:"#fff",borderRadius:24,padding:28,width:"100%",maxWidth:380,boxShadow:"0 8px 32px rgba(0,0,0,.12)"}}>
-        <div style={{display:"flex",background:P.slateL,borderRadius:14,padding:4,marginBottom:20}}>
-          {[["login","Entrar"],["cadastro","Cadastrar"]].map(([m,l])=>(
-            <button key={m} onClick={()=>{setModo(m);setErro("");setMsg("");}}
-              style={{flex:1,border:"none",borderRadius:10,padding:"9px 0",fontWeight:800,fontSize:13,cursor:"pointer",background:modo===m?"#fff":"transparent",color:modo===m?P.text:P.sub,transition:"all .2s"}}>
-              {l}
-            </button>
-          ))}
+      <div style={{background:"#fff",borderRadius:24,padding:32,width:"100%",maxWidth:400,boxShadow:"0 8px 32px rgba(0,0,0,.12)"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:18,fontWeight:800,color:P.text}}>🔒 Acesso Restrito</div>
+          <div style={{fontSize:13,color:P.sub,marginTop:4}}>Digite a senha para entrar</div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
           <div>
-            <label style={{fontSize:12,fontWeight:700,color:P.sub,marginBottom:5,display:"block"}}>E-mail</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="seu@email.com"
-              style={{width:"100%",background:P.slateL,border:"none",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none"}}/>
+            <label style={{fontSize:14,fontWeight:800,color:P.text,marginBottom:6,display:"block"}}>Senha</label>
+            <input type="password" value={senha} onChange={e=>{setSenha(e.target.value);setErro("");}}
+              placeholder="Digite a senha..."
+              onKeyDown={e=>e.key==="Enter"&&entrar()}
+              autoFocus
+              style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:14,padding:"14px 16px",fontSize:16,outline:"none",color:P.text}}/>
           </div>
-          <div>
-            <label style={{fontSize:12,fontWeight:700,color:P.sub,marginBottom:5,display:"block"}}>Senha</label>
-            <input type="password" value={senha} onChange={e=>setSenha(e.target.value)}
-              placeholder="••••••••"
-              onKeyDown={e=>e.key==="Enter"&&(modo==="login"?entrar():cadastrar())}
-              style={{width:"100%",background:P.slateL,border:"none",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none"}}/>
-          </div>
-          {modo==="cadastro"&&(
-            <div>
-              <label style={{fontSize:12,fontWeight:700,color:P.sub,marginBottom:5,display:"block"}}>Confirmar Senha</label>
-              <input type="password" value={confirmSenha} onChange={e=>setConfirmSenha(e.target.value)}
-                placeholder="••••••••"
-                style={{width:"100%",background:P.slateL,border:"none",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none"}}/>
-            </div>
-          )}
-          {erro&&<div style={{background:P.roseL,color:P.rose,borderRadius:10,padding:"10px 14px",fontSize:12,fontWeight:600}}>❌ {erro}</div>}
-          {msg&&<div style={{background:P.tealL,color:P.teal,borderRadius:10,padding:"10px 14px",fontSize:12,fontWeight:600}}>✅ {msg}</div>}
-          <button onClick={modo==="login"?entrar:cadastrar} disabled={loading}
-            style={{background:loading?P.slate:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"14px",fontWeight:800,fontSize:15,cursor:"pointer"}}>
-            {loading?"⏳ Aguarde…":modo==="login"?"Entrar →":"Criar conta →"}
+          {erro&&<div style={{background:P.roseL,color:P.rose,borderRadius:12,padding:"12px 16px",fontSize:13,fontWeight:700,textAlign:"center"}}>❌ {erro}</div>}
+          <button onClick={entrar}
+            style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"16px",fontWeight:800,fontSize:16,cursor:"pointer"}}>
+            Entrar →
           </button>
         </div>
-      </div>
-      <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:20,textAlign:"center"}}>
-        Configure a URL e chave do Supabase no código antes de usar
       </div>
     </div>
   );
