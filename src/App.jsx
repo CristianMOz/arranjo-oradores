@@ -1011,44 +1011,49 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
   const [copiado, setCopiado] = useState(false);
 
   const compartilhar = async () => {
-    const pad = (str, len) => String(str||"").slice(0,len).padEnd(len);
     const linhas = [];
     linhas.push(`📋 *Programação Discursos — ${mesLabel}*`);
-    linhas.push(`Congregação: *Congregação Alto da Colina*`);
-    linhas.push(`Endereço: José do Patrocínio 249, Cidade Nova, Indaiatuba/SP`);
-    linhas.push(`Horário: *18:00*`);
     linhas.push(``);
-    linhas.push(`*↙ ORADORES VISITANTES*`);
+    linhas.push(`🏛 *Congregação Alto da Colina*`);
+    linhas.push(`📍 José do Patrocínio 249, Cidade Nova, Indaiatuba/SP`);
+    linhas.push(`🕐 Sábado às *19:00*`);
+    linhas.push(``);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+    linhas.push(`📥 *ORADORES VISITANTES*`);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     if (filtV.length === 0) {
       linhas.push(`_Nenhum visitante neste mês_`);
     } else {
-      linhas.push(`\`\`\``);
-      linhas.push(`${"Data".padEnd(11)}${"Orador".padEnd(22)}${"Tema".padEnd(35)}Congregação`);
-      linhas.push(`${"─".repeat(85)}`);
-      filtV.forEach(v => {
+      filtV.forEach((v,i) => {
         const e = getEsboco(v.esbocoId);
-        const tema = e ? `${e.n} ${e.tema}` : "–";
-        linhas.push(`${pad(v.data.slice(0,10),11)}${pad(v.orador,22)}${pad(tema,35)}${v.cong}`);
+        if(i>0) linhas.push(``);
+        linhas.push(`📅 *${v.data}*`);
+        linhas.push(`🎤 Orador: ${v.orador}`);
+        linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
+        linhas.push(`⛪ Congregação: ${v.cong}`);
       });
-      linhas.push(`\`\`\``);
     }
     linhas.push(``);
-    linhas.push(`*↗ SAÍDAS DE ORADORES*`);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+    linhas.push(`📤 *SAÍDAS DE ORADORES*`);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     if (filtS.length === 0) {
       linhas.push(`_Nenhuma saída neste mês_`);
     } else {
-      linhas.push(`\`\`\``);
-      linhas.push(`${"Data".padEnd(11)}${"Orador".padEnd(22)}${"Tema".padEnd(35)}Congregação`);
-      linhas.push(`${"─".repeat(85)}`);
-      filtS.forEach(s => {
+      filtS.forEach((s,i) => {
         const e = getEsboco(s.esbocoId);
-        const tema = e ? `${e.n} ${e.tema}` : "–";
         const cong = getCong(s.cong);
-        linhas.push(`${pad(s.data.slice(0,10),11)}${pad(s.oradorNome,22)}${pad(tema,35)}${s.cong}`);
-        if (cong && cong.end) linhas.push(`${"".padEnd(11)}${"".padEnd(22)}${"Endereço:".padEnd(35)}${cong.end}`);
+        if(i>0) linhas.push(``);
+        linhas.push(`📅 *${s.data}*`);
+        linhas.push(`🎤 Orador: ${s.oradorNome}`);
+        linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
+        linhas.push(`⛪ Congregação: ${s.cong}`);
+        if (cong && cong.end) linhas.push(`📍 Endereço: ${cong.end}`);
       });
-      linhas.push(`\`\`\``);
     }
+    linhas.push(``);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+    linhas.push(`📊 *Resumo:* ${filtV.length} visitante${filtV.length!==1?"s":""} | ${filtS.length} saída${filtS.length!==1?"s":""}`);
     linhas.push(``);
     linhas.push(`_Gerado em ${new Date().toLocaleDateString("pt-BR")} · Arranjo de Oradores_`);
 
