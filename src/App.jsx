@@ -1121,16 +1121,17 @@ function RelatorioOradores({oradores, saidas, esbocos}) {
     linhas.push(`🏛 Congregação Alto da Colina`);
     linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━`);
-    sels.forEach((o, i) => {
-      if (i > 0) linhas.push(``);
-      const eb = o.ebs[0];
-      linhas.push(`🎤 *${o.nome}*`);
-      if (eb) linhas.push(`📑 Tema: ${eb.n} – ${eb.tema}`);
-      linhas.push(`📅 Última saída: ${o.ultimaData || "Nunca saiu"}`);
-      if (o.ultimaCong) linhas.push(`🏠 Congregação: ${o.ultimaCong}`);
-      linhas.push(`⏱ Intervalo: ${o.dias !== null ? `${o.dias} dias` : "Nunca saiu"}`);
+    sels.forEach((o) => {
+      linhas.push(`Orador: ${o.nome}`);
+      if (o.ebs.length === 0) {
+        linhas.push(`Tema: –`);
+      } else {
+        o.ebs.forEach(eb => {
+          linhas.push(`Tema: ${eb.n} – ${eb.tema}`);
+        });
+      }
+      linhas.push(``);
     });
-    linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━`);
     linhas.push(`_${sels.length} orador${sels.length!==1?"es":""} · ${mesLabel}_`);
     const texto = linhas.join("\n");
