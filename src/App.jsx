@@ -215,7 +215,6 @@ const ESBOCOS_INIT = [
 const ORADORES_INIT = [
   {id:1,nome:"Aurimar Erasmo de Oliveira",cel:"1999887766",esbocoIds:[10,64],status:"confirmado"},
   {id:2,nome:"Alison Oliveira",cel:"19993553927",esbocoIds:[66,132],status:"confirmado"},
-
   {id:4,nome:"Crystyano Santos",cel:"19996035529",esbocoIds:[29,167,180],status:"confirmado"},
   {id:5,nome:"Darcy Sousa",cel:"19997980122",esbocoIds:[4,7,35,86],status:"confirmado"},
   {id:6,nome:"Diógenes Lima",cel:"11979562733",esbocoIds:[88,149,155,159,187,188,189],status:"confirmado"},
@@ -298,9 +297,7 @@ const auth = {
     try { return JSON.parse(localStorage.getItem("arranjo_session") || "null"); }
     catch(_e) { return null; }
   },
-  saveSession: (session) => {
-    localStorage.setItem("arranjo_session", JSON.stringify(session));
-  },
+  saveSession: (session) => { localStorage.setItem("arranjo_session", JSON.stringify(session)); },
   clearSession: () => localStorage.removeItem("arranjo_session"),
 };
 
@@ -332,14 +329,27 @@ const toIso = br => { const p=br.split("/"); return p.length===3?`${p[2]}-${p[1]
 const toBr = iso => { const p=iso.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso; };
 const sortKey = br => { const p=br.split("/"); return p.length===3?`${p[2]}${p[1]}${p[0]}`:""; };
 
+// ── NEW: daysSince helper ─────────────────────────────────
+const daysSince = (iso) => {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  return Math.floor(diff / 86400000);
+};
+
+// ── NEW: rotation color helper ────────────────────────────
+const corRotacao = (dias) => {
+  if (dias === null) return { bg:"#E2E8F0", text:"#64748B", label:"Nunca saiu", tipo:"nunca" };
+  if (dias >= 60)   return { bg:"#DCFCE7", text:"#16A34A", label:`${dias}d`,    tipo:"disp"  };
+  if (dias >= 30)   return { bg:"#FEF3C7", text:"#D97706", label:`${dias}d`,    tipo:"medio" };
+  return               { bg:"#FFE4E6", text:"#E11D48", label:`${dias}d`,    tipo:"rec"   };
+};
+
 // ── APP ──────────────────────────────────────────────────
 const SENHA_APP = "oradores2026";
 
 export default function App() {
   const [logado, setLogado] = useState(() => localStorage.getItem("arranjo_logado") === "true");
-
   if (!logado) return <LoginScreen onLogin={() => { localStorage.setItem("arranjo_logado","true"); setLogado(true); }}/>;
-
   return <MainApp session={{user:{email:""}}} onLogout={() => { localStorage.removeItem("arranjo_logado"); setLogado(false); }}/>;
 }
 
@@ -391,10 +401,7 @@ function MainApp({ session, onLogout }) {
     if (carregando) return;
     const interval = setInterval(async () => {
       try {
-        const [vi, sa] = await Promise.all([
-          db.getAll("visitantes","data"),
-          db.getAll("saidas","data"),
-        ]);
+        const [vi, sa] = await Promise.all([db.getAll("visitantes","data"), db.getAll("saidas","data")]);
         if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
         if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
       } catch(e) {}
@@ -406,11 +413,8 @@ function MainApp({ session, onLogout }) {
     setSincronizando(true);
     try {
       const [eb, or, co, vi, sa] = await Promise.all([
-        db.getAll("esbocos"),
-        db.getAll("oradores"),
-        db.getAll("congregacoes"),
-        db.getAll("visitantes","data"),
-        db.getAll("saidas","data"),
+        db.getAll("esbocos"), db.getAll("oradores"), db.getAll("congregacoes"),
+        db.getAll("visitantes","data"), db.getAll("saidas","data"),
       ]);
       if (eb && eb.length) setEsbocos(eb.map(fromDB.esboco));
       if (or && or.length) setOradores(or.map(fromDB.orador));
@@ -423,8 +427,8 @@ function MainApp({ session, onLogout }) {
   };
 
   const TABS = [
-    {id:"home",    icon:"📋",label:"Programação"},
-    {id:"saida",   icon:"📤",label:"Saída"},
+    {id:"home",     icon:"📋",label:"Programação"},
+    {id:"saida",    icon:"📤",label:"Saída"},
     {id:"visitante",icon:"📥",label:"Visitante"},
     {id:"oradores", icon:"🎤",label:"Oradores"},
     {id:"congs",    icon:"🏠",label:"Congs"},
@@ -433,7 +437,6 @@ function MainApp({ session, onLogout }) {
   ];
 
   const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null};
-
   const ctx = {esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
 
   return (
@@ -457,7 +460,6 @@ function MainApp({ session, onLogout }) {
           <div style={{fontWeight:900,fontSize:22,color:"#fff",letterSpacing:-.5}}>Arranjo de Oradores</div>
           <div style={{fontSize:13,color:"rgba(255,255,255,.8)"}}>Congregação Alto da Colina</div>
           <div style={{width:40,height:40,border:"4px solid rgba(255,255,255,.3)",borderTop:"4px solid #fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
-          <div style={{fontSize:12,color:"rgba(255,255,255,.7)"}}>Carregando dados…</div>
         </div>
       )}
 
@@ -483,40 +485,30 @@ function MainApp({ session, onLogout }) {
               <div style={{fontWeight:900,fontSize:16,color:P.text}}>{(TABS.find(t=>t.id===tab)||{}).label}</div>
               <div style={{fontSize:11,color:P.sub}}>👤 {session && session.user ? session.user.email : ""}</div>
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar…"
-                style={{background:P.slateL,border:"none",borderRadius:20,padding:"6px 12px",fontSize:12,width:"100%",marginTop:6,outline:"none"}}
-              />
+                style={{background:P.slateL,border:"none",borderRadius:20,padding:"6px 12px",fontSize:12,width:"100%",marginTop:6,outline:"none"}}/>
             </div>
           </>
         )}
         {TAB_MODAL[tab] && (
           <button onClick={()=>setModal({type:TAB_MODAL[tab]})}
-            style={{background:P.sky,border:"none",color:"#fff",width:34,height:34,borderRadius:12,fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            ＋
-          </button>
+            style={{background:P.sky,border:"none",color:"#fff",width:34,height:34,borderRadius:12,fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>
         )}
         <button onClick={sincronizarAgora}
-          style={{background:sincronizando?P.teal:P.slateL,border:"none",color:sincronizando?"#fff":P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer",transition:"all .3s"}}>
-          🔄
-        </button>
+          style={{background:sincronizando?P.teal:P.slateL,border:"none",color:sincronizando?"#fff":P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer",transition:"all .3s"}}>🔄</button>
         <button onClick={async ()=>{ await auth.signOut(session ? session.access_token : null); onLogout(); }}
-          style={{background:P.slateL,border:"none",color:P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer"}}
-          title="Sair">
-          🚪
-        </button>
+          style={{background:P.slateL,border:"none",color:P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer"}} title="Sair">🚪</button>
       </div>
 
-      {/* Content */}
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden"}}>
-        {tab==="home"      && <ProgramacaoMes visitantes={visitantes} saidas={saidas} esbocos={esbocos} mes={viewMes} ano={viewAno} setModal={setModal}/>}
-        {tab==="saida"     && <SaidaView {...ctx}/>}
-        {tab==="visitante" && <VisitanteView {...ctx}/>}
-        {tab==="oradores"  && <OradoresView {...ctx}/>}
-        {tab==="congs"     && <CongsView {...ctx}/>}
-        {tab==="esbocos"   && <EsbocosView {...ctx}/>}
-        {tab==="relatorio" && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes}/>}
+        {tab==="home"       && <ProgramacaoMes visitantes={visitantes} saidas={saidas} esbocos={esbocos} mes={viewMes} ano={viewAno} setModal={setModal}/>}
+        {tab==="saida"      && <SaidaView {...ctx}/>}
+        {tab==="visitante"  && <VisitanteView {...ctx}/>}
+        {tab==="oradores"   && <OradoresView oradores={oradores} esbocos={esbocos} saidas={saidas} search={search} setModal={setModal}/>}
+        {tab==="congs"      && <CongsView {...ctx}/>}
+        {tab==="esbocos"    && <EsbocosView esbocos={esbocos} saidas={saidas} visitantes={visitantes} search={search} setModal={setModal}/>}
+        {tab==="relatorio"  && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} oradores={oradores}/>}
       </div>
 
-      {/* Bottom nav */}
       <div style={{background:P.white,borderTop:`1px solid ${P.border}`,display:"flex",flexShrink:0,overflowX:"auto",position:"relative"}}>
         {TABS.map(t=>{
           const active=tab===t.id;
@@ -550,13 +542,11 @@ const navBtn = {background:P.slateL,border:"none",width:34,height:34,borderRadiu
 function LoginScreen({ onLogin }) {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
-
   const entrar = () => {
     if (!senha) return setErro("Digite a senha de acesso");
     if (senha !== SENHA_APP) return setErro("Senha incorreta");
     onLogin();
   };
-
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:`linear-gradient(135deg,${P.sky},${P.teal})`,alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Nunito',sans-serif"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}@media(min-width:601px){html{zoom:1.25}}`}</style>
@@ -574,9 +564,7 @@ function LoginScreen({ onLogin }) {
           <div>
             <label style={{fontSize:14,fontWeight:800,color:P.text,marginBottom:6,display:"block"}}>Senha</label>
             <input type="password" value={senha} onChange={e=>{setSenha(e.target.value);setErro("");}}
-              placeholder="Digite a senha..."
-              onKeyDown={e=>e.key==="Enter"&&entrar()}
-              autoFocus
+              placeholder="Digite a senha..." onKeyDown={e=>e.key==="Enter"&&entrar()} autoFocus
               style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:14,padding:"14px 16px",fontSize:16,outline:"none",color:P.text}}/>
           </div>
           {erro&&<div style={{background:P.roseL,color:P.rose,borderRadius:12,padding:"12px 16px",fontSize:13,fontWeight:700,textAlign:"center"}}>❌ {erro}</div>}
@@ -596,7 +584,6 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
   const eventos=[];
   visitantes.forEach(v=>{const p=v.data.split("/");if(p.length===3&&p[1]===mm&&p[2]===aa)eventos.push({...v,tipo:"visitante",dia:+p[0]});});
   saidas.forEach(s=>{const p=s.data.split("/");if(p.length===3&&p[1]===mm&&p[2]===aa)eventos.push({...s,tipo:"saida",dia:+p[0]});});
-
   const porDia={};
   eventos.forEach(e=>{if(!porDia[e.dia])porDia[e.dia]=[];porDia[e.dia].push(e);});
   const diasOrdenados=Object.keys(porDia).map(Number).sort((a,b)=>a-b);
@@ -607,7 +594,6 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
   const totalV=eventos.filter(e=>e.tipo==="visitante").length;
   const totalS=eventos.filter(e=>e.tipo==="saida").length;
   const getDiaSemana=dia=>DIAS[new Date(+aa,mes,dia).getDay()];
-
   return (
     <div>
       <div style={{display:"flex",gap:8,padding:"12px 14px 6px"}}>
@@ -624,7 +610,6 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
           <div><div style={{fontWeight:900,fontSize:20,color:sabadosSemArranjo.length>0?P.rose:P.lime,lineHeight:1}}>{sabadosSemArranjo.length}</div><div style={{fontSize:9,color:P.sub}}>Vazios</div></div>
         </div>
       </div>
-
       {sabadosSemArranjo.length>0&&(
         <div style={{margin:"4px 14px 0",background:"#FFF7ED",border:`1.5px solid ${P.amber}44`,borderRadius:14,padding:12}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
@@ -642,15 +627,12 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
           </div>
         </div>
       )}
-
       {diasOrdenados.length===0&&(
         <div style={{textAlign:"center",color:P.sub,padding:"40px 0",fontSize:14}}>
           <div style={{fontSize:40}}>📭</div>
           <div style={{fontWeight:700,marginTop:8}}>Nenhum arranjo neste mês</div>
-          <div style={{fontSize:12,marginTop:4}}>Use o ＋ para adicionar</div>
         </div>
       )}
-
       <div style={{padding:"10px 14px 20px",display:"flex",flexDirection:"column",gap:14}}>
         {diasOrdenados.map((dia,idx)=>{
           const evs=porDia[dia];
@@ -684,7 +666,6 @@ function EventCard({evento,esbocos,setModal}) {
   const nome=isV?evento.orador:evento.oradorNome;
   const local=isV?`↙ ${evento.cong}`:`↗ ${evento.cong}`;
   const ac=avatarColor(nome||"?");
-
   return (
     <div onClick={()=>setModal({type:isV?"visitante":"saida",data:evento})}
       style={{background:P.white,borderRadius:16,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",cursor:"pointer",borderLeft:`4px solid ${cor}`}}>
@@ -765,35 +746,126 @@ function SaidaView({saidas,search,setModal}) {
   );
 }
 
-function OradoresView({oradores,esbocos,search,setModal}) {
-  const [filter,setFilter]=useState("todos");
-  const q=search.toLowerCase();
-  const rows=oradores.filter(o=>(!q||o.nome.toLowerCase().includes(q)||o.cel.includes(q))&&(filter==="todos"||o.status===filter));
+// ── ORADORES VIEW — com controle de rotação ───────────────
+function OradoresView({oradores, esbocos, saidas, search, setModal}) {
+  const [filter, setFilter] = useState("todos");
+
+  const q = search.toLowerCase();
+
+  // Compute last saida for each orador
+  const oradorComRotacao = oradores.map(o => {
+    const saidasDoOrador = [...saidas]
+      .filter(s => s.oradorId === o.id)
+      .sort((a, b) => sortKey(b.data).localeCompare(sortKey(a.data)));
+    const ultima = saidasDoOrador[0] || null;
+    const ultimaData = ultima ? ultima.data : null;
+    const ultimaCong = ultima ? ultima.cong : null;
+    const dias = ultimaData ? daysSince(toIso(ultimaData)) : null;
+    return { ...o, ultimaData, ultimaCong, dias };
+  });
+
+  // Sort by most days first (most available at top)
+  const sorted = [...oradorComRotacao].sort((a, b) => {
+    if (a.dias === null && b.dias === null) return a.nome.localeCompare(b.nome);
+    if (a.dias === null) return -1;
+    if (b.dias === null) return 1;
+    return b.dias - a.dias;
+  });
+
+  const rows = sorted.filter(o => {
+    const matchQ = !q || o.nome.toLowerCase().includes(q) || o.cel.includes(q);
+    const cor = corRotacao(o.dias);
+    const matchF = filter === "todos" || filter === cor.tipo;
+    return matchQ && matchF;
+  });
+
+  const totDisp   = oradorComRotacao.filter(o => o.dias !== null && o.dias >= 60).length;
+  const totMedio  = oradorComRotacao.filter(o => o.dias !== null && o.dias >= 30 && o.dias < 60).length;
+  const totRec    = oradorComRotacao.filter(o => o.dias !== null && o.dias < 30).length;
+  const totNunca  = oradorComRotacao.filter(o => o.dias === null).length;
+
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <div style={{display:"flex",gap:8,padding:"10px 14px 6px",overflowX:"auto",flexShrink:0}}>
-        {[["todos","Todos",P.slate],["confirmado","Confirmados",P.lime],["pendente","Pendentes",P.amber]].map(([k,l,c])=>(
-          <button key={k} onClick={()=>setFilter(k)} style={{background:filter===k?c:P.slateL,color:filter===k?"#fff":P.sub,border:"none",borderRadius:20,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{l}</button>
+      {/* Summary bar */}
+      <div style={{display:"flex",gap:6,padding:"10px 14px 6px",flexShrink:0}}>
+        {[
+          [totDisp,  "Disponível", "#DCFCE7","#16A34A"],
+          [totMedio, "Moderado",   "#FEF3C7","#D97706"],
+          [totRec,   "Recente",    "#FFE4E6","#E11D48"],
+          [totNunca, "Nunca",      "#E2E8F0","#64748B"],
+        ].map(([v,l,bg,c])=>(
+          <div key={l} style={{flex:1,background:bg,borderRadius:10,padding:"6px 4px",textAlign:"center"}}>
+            <div style={{fontSize:16,fontWeight:900,color:c,lineHeight:1}}>{v}</div>
+            <div style={{fontSize:8,color:c,fontWeight:700,marginTop:1}}>{l}</div>
+          </div>
         ))}
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"6px 14px 12px",display:"flex",flexDirection:"column",gap:10}}>
+
+      {/* Legend */}
+      <div style={{display:"flex",gap:10,padding:"2px 14px 8px",flexShrink:0,flexWrap:"wrap"}}>
+        <span style={{fontSize:10,color:P.sub}}>
+          <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#16A34A",marginRight:3}}/>+60d disponível
+        </span>
+        <span style={{fontSize:10,color:P.sub}}>
+          <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#D97706",marginRight:3}}/>30–60d moderado
+        </span>
+        <span style={{fontSize:10,color:P.sub}}>
+          <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#E11D48",marginRight:3}}/>&lt;30d recente
+        </span>
+      </div>
+
+      {/* Filter pills */}
+      <div style={{display:"flex",gap:6,padding:"0 14px 8px",overflowX:"auto",flexShrink:0}}>
+        {[
+          ["todos","Todos",    P.slate],
+          ["disp", "+60d",     "#16A34A"],
+          ["medio","30–60d",   "#D97706"],
+          ["rec",  "-30d",     "#E11D48"],
+          ["nunca","Nunca",    P.slate],
+        ].map(([k,l,c])=>(
+          <button key={k} onClick={()=>setFilter(k)}
+            style={{background:filter===k?c:P.slateL,color:filter===k?"#fff":P.sub,border:"none",borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Cards */}
+      <div style={{flex:1,overflowY:"auto",padding:"0 14px 12px",display:"flex",flexDirection:"column",gap:10}}>
         {rows.length===0&&<Empty/>}
         {rows.map((o,i)=>{
-          const ac=avatarColor(o.nome);
-          const st=STATUS[o.status]||STATUS.pendente;
-          const ebs=esbocos.filter(e=>(o.esbocoIds||[]).includes(e.id));
-          const eb=ebs[0];
+          const ac  = avatarColor(o.nome);
+          const st  = STATUS[o.status]||STATUS.pendente;
+          const ebs = esbocos.filter(e=>(o.esbocoIds||[]).includes(e.id));
+          const eb  = ebs[0];
+          const cor = corRotacao(o.dias);
           return (
-            <div key={o.id} className="slide" style={{background:P.white,borderRadius:18,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",cursor:"pointer"}}
+            <div key={o.id} className="slide"
+              style={{background:P.white,borderRadius:18,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",cursor:"pointer",borderLeft:`4px solid ${cor.text}`}}
               onClick={()=>setModal({type:"orador",data:o})}>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:48,height:48,borderRadius:16,background:ac,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16}}>{initials(o.nome)}</div>
+                <div style={{width:48,height:48,borderRadius:16,background:ac,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,flexShrink:0}}>
+                  {initials(o.nome)}
+                </div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:800,fontSize:14,color:P.text}}>{o.nome}</div>
-                  <div style={{fontSize:12,color:P.sub,marginTop:1}}>📱 {o.cel||"–"}</div>
-                  {eb&&<div style={{fontSize:11,color:P.sky,marginTop:1}}>📑 {eb.n} – {eb.tema.slice(0,35)}… ({ebs.length} temas)</div>}
+                  <div style={{fontSize:11,color:P.sub,marginTop:1}}>📱 {o.cel||"–"}</div>
+                  {eb&&<div style={{fontSize:11,color:P.sky,marginTop:1}}>📑 {eb.n} – {eb.tema.slice(0,30)}… ({ebs.length})</div>}
+                  {/* ── Última saída info ── */}
+                  {o.ultimaData ? (
+                    <div style={{fontSize:10,color:P.sub,marginTop:3}}>
+                      📅 {o.ultimaData} · 🏠 {o.ultimaCong}
+                    </div>
+                  ) : (
+                    <div style={{fontSize:10,color:P.sub,marginTop:3,fontStyle:"italic"}}>Nunca saiu</div>
+                  )}
                 </div>
-                <span style={{background:st.bg,color:st.color,fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8}}>{st.label}</span>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
+                  <span style={{background:cor.bg,color:cor.text,fontSize:12,fontWeight:800,padding:"5px 10px",borderRadius:10,minWidth:52,textAlign:"center"}}>
+                    {cor.label}
+                  </span>
+                  <span style={{background:st.bg,color:st.color,fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:8}}>{st.label}</span>
+                </div>
               </div>
             </div>
           );
@@ -837,28 +909,96 @@ function CongsView({congregacoes,saidas,visitantes,search,setModal}) {
   );
 }
 
-function EsbocosView({esbocos,search,setModal}) {
-  const q=search.toLowerCase();
-  const rows=[...esbocos].filter(e=>!q||e.tema.toLowerCase().includes(q)||String(e.n).includes(q));
+// ── ESBOÇOS VIEW — com controle de uso ────────────────────
+function EsbocosView({esbocos, saidas, visitantes, search, setModal}) {
+  const q = search.toLowerCase();
+
+  // Compute stats for each esboço
+  const esbocoStats = esbocos.map(e => {
+    const usosS = saidas.filter(s => s.esbocoId === e.id).map(s => ({ data:s.data, quem:s.oradorNome }));
+    const usosV = visitantes.filter(v => v.esbocoId === e.id).map(v => ({ data:v.data, quem:v.orador }));
+    const todos = [...usosS, ...usosV].sort((a,b) => sortKey(b.data).localeCompare(sortKey(a.data)));
+    const ultimo = todos[0] || null;
+    const dias = ultimo ? daysSince(toIso(ultimo.data)) : null;
+    return { ...e, totalUsos: todos.length, ultimaData: ultimo?.data||null, ultimoQuem: ultimo?.quem||null, dias };
+  });
+
+  const rows = esbocoStats.filter(e => !q || e.tema.toLowerCase().includes(q) || String(e.n).includes(q));
+
+  // Color based on days since last use (different thresholds for esboços)
+  const corEsboco = (dias) => {
+    if (dias === null) return { bg: P.slateL, color: P.sub, label: "Nunca" };
+    if (dias >= 180)  return { bg: P.limeL,  color: P.lime,  label: `${dias}d` };
+    if (dias >= 90)   return { bg: P.amberL, color: P.amber, label: `${dias}d` };
+    return               { bg: P.roseL,  color: P.rose,  label: `${dias}d` };
+  };
+
   return (
     <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:8}}>
-      {rows.map((e,i)=>(
-        <div key={e.id} className="slide" onClick={()=>setModal({type:"esboco",data:e})}
-          style={{background:P.white,borderRadius:16,padding:"13px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.05)",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:40,height:40,borderRadius:12,background:e.ultimo?P.tealL:P.slateL,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:e.ultimo?P.teal:P.sub}}>{e.n}</div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:13,color:P.text}}>{e.tema}</div>
-            {e.ultimo&&<div style={{fontSize:11,color:P.teal,marginTop:2,fontWeight:600}}>✓ Último: {e.ultimo}</div>}
+      {/* Legend */}
+      <div style={{display:"flex",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+        <span style={{fontSize:10,color:P.sub}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:P.lime,marginRight:3}}/>+180d disponível</span>
+        <span style={{fontSize:10,color:P.sub}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:P.amber,marginRight:3}}/>90–180d moderado</span>
+        <span style={{fontSize:10,color:P.sub}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:P.rose,marginRight:3}}/>&lt;90d recente</span>
+      </div>
+      {rows.map((e,i)=>{
+        const cor = corEsboco(e.dias);
+        return (
+          <div key={e.id} className="slide" onClick={()=>setModal({type:"esboco",data:e})}
+            style={{background:P.white,borderRadius:16,padding:"13px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.05)",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:12,background:cor.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:cor.color,flexShrink:0,flexDirection:"column",lineHeight:1.1}}>
+              <span>{e.n}</span>
+              {e.totalUsos > 0 && <span style={{fontSize:9,fontWeight:700,opacity:.8}}>{e.totalUsos}x</span>}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:13,color:P.text}}>{e.tema}</div>
+              {e.ultimaData ? (
+                <div style={{fontSize:10,color:P.sub,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <span>📅 {e.ultimaData}</span>
+                  <span>🎤 {e.ultimoQuem}</span>
+                  <span style={{color:cor.color,fontWeight:700}}>{cor.label}</span>
+                </div>
+              ) : (
+                <div style={{fontSize:10,color:P.sub,marginTop:3,fontStyle:"italic"}}>Nunca apresentado</div>
+              )}
+            </div>
+            <span style={{color:P.sub,fontSize:18}}>›</span>
           </div>
-          <span style={{color:P.sub,fontSize:18}}>›</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-// ── RELATÓRIO ─────────────────────────────────────────────
-function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
+// ── RELATÓRIO VIEW — com sub-abas ─────────────────────────
+function RelatorioView({visitantes, saidas, esbocos, congregacoes, oradores}) {
+  const [subTab, setSubTab] = useState("programacao");
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      {/* Sub-tab bar */}
+      <div style={{display:"flex",borderBottom:`1px solid ${P.border}`,background:P.white,flexShrink:0}}>
+        {[
+          ["programacao","📋 Programação"],
+          ["oradores",   "🎤 Rel. Oradores"],
+        ].map(([k,l])=>(
+          <button key={k} onClick={()=>setSubTab(k)}
+            style={{flex:1,border:"none",background:"none",cursor:"pointer",padding:"12px 8px",fontSize:12,fontWeight:subTab===k?800:600,color:subTab===k?P.sky:P.sub,borderBottom:`3px solid ${subTab===k?P.sky:"transparent"}`,transition:"all .15s"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto"}}>
+        {subTab==="programacao" && <ProgramacaoRelatorio visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes}/>}
+        {subTab==="oradores"    && <RelatorioOradores oradores={oradores} saidas={saidas} esbocos={esbocos}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── PROGRAMAÇÃO RELATORIO (existing logic extracted) ───────
+function ProgramacaoRelatorio({visitantes, saidas, esbocos, congregacoes}) {
   const hoje=new Date();
   const [mes,setMes]=useState(hoje.getMonth());
   const [ano,setAno]=useState(hoje.getFullYear());
@@ -872,11 +1012,8 @@ function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
   const prevMes=()=>{if(mes===0){setMes(11);setAno(a=>a-1);}else setMes(m=>m-1);};
   const nextMes=()=>{if(mes===11){setMes(0);setAno(a=>a+1);}else setMes(m=>m+1);};
   const mesLabel=`${MESES[mes]} ${ano}`;
-
   if(showPrint) return <PrintView mes={mes} ano={ano} filtV={filtV} filtS={filtS} getEsboco={getEsboco} getCong={getCong} mesLabel={mesLabel} onClose={()=>setShowPrint(false)}/>;
-
   const rowStyle=(i)=>({display:"grid",gridTemplateColumns:"70px 1fr 1fr",gap:6,padding:"10px 14px",background:i%2===0?"#FAFBFC":"#fff",fontSize:12});
-
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:"100%"}}>
       <div style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,color:"#fff",padding:"16px 14px"}}>
@@ -888,12 +1025,10 @@ function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
           <button onClick={nextMes} style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:10,padding:"8px 12px",cursor:"pointer",fontWeight:700}}>▶</button>
         </div>
       </div>
-
       <div style={{padding:"14px 14px 24px",display:"flex",flexDirection:"column",gap:16}}>
         <button onClick={()=>setShowPrint(true)} style={{width:"100%",background:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"14px",fontWeight:800,fontSize:14,cursor:"pointer"}}>
           📄 Ver e Imprimir Relatório
         </button>
-
         <div style={{background:P.white,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
           <div style={{background:P.violetL,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:18}}>📥</span>
@@ -905,20 +1040,16 @@ function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
               <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr",gap:6,padding:"7px 14px",background:P.slateL}}>
                 {["Data","Orador / Tema","Congregação"].map(h=><div key={h} style={{fontSize:10,fontWeight:800,color:P.sub,textTransform:"uppercase"}}>{h}</div>)}
               </div>
-              {filtV.map((v,i)=>{
-                const eb=getEsboco(v.esbocoId);
-                return (
-                  <div key={v.id} style={rowStyle(i)}>
-                    <div><div style={{fontWeight:700,fontSize:12,color:P.sky}}>{v.data.slice(0,5)}</div></div>
-                    <div><div style={{fontWeight:700,fontSize:12,color:P.text}}>{v.orador}</div>{eb&&<div style={{fontSize:10,color:P.violet}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
-                    <div style={{fontSize:11,color:P.text}}>{v.cong}</div>
-                  </div>
-                );
-              })}
+              {filtV.map((v,i)=>{const eb=getEsboco(v.esbocoId);return(
+                <div key={v.id} style={rowStyle(i)}>
+                  <div><div style={{fontWeight:700,fontSize:12,color:P.sky}}>{v.data.slice(0,5)}</div></div>
+                  <div><div style={{fontWeight:700,fontSize:12,color:P.text}}>{v.orador}</div>{eb&&<div style={{fontSize:10,color:P.violet}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
+                  <div style={{fontSize:11,color:P.text}}>{v.cong}</div>
+                </div>
+              );})}
             </>
           )}
         </div>
-
         <div style={{background:P.white,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
           <div style={{background:P.skyL,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:18}}>📤</span>
@@ -930,26 +1061,16 @@ function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
               <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr",gap:6,padding:"7px 14px",background:P.slateL}}>
                 {["Data","Orador / Tema","Congregação"].map(h=><div key={h} style={{fontSize:10,fontWeight:800,color:P.sub,textTransform:"uppercase"}}>{h}</div>)}
               </div>
-              {filtS.map((s,i)=>{
-                const eb=getEsboco(s.esbocoId);
-                const cong=getCong(s.cong);
-                const st=STATUS[s.status];
-                return (
-                  <div key={s.id} style={rowStyle(i)}>
-                    <div style={{fontWeight:700,fontSize:12,color:P.sky}}>{s.data.slice(0,5)}</div>
-                    <div><div style={{fontWeight:700,fontSize:12,color:P.text}}>{s.oradorNome}</div>{eb&&<div style={{fontSize:10,color:P.sky}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
-                    <div>
-                      <div style={{fontSize:11,color:P.text}}>{s.cong}</div>
-                      {cong && cong.end&&<div style={{fontSize:10,color:P.sub}}>{cong.end}</div>}
-                      {st&&<span style={{background:st.bg,color:st.color,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:6}}>{st.label}</span>}
-                    </div>
-                  </div>
-                );
-              })}
+              {filtS.map((s,i)=>{const eb=getEsboco(s.esbocoId);const cong=getCong(s.cong);const st=STATUS[s.status];return(
+                <div key={s.id} style={rowStyle(i)}>
+                  <div style={{fontWeight:700,fontSize:12,color:P.sky}}>{s.data.slice(0,5)}</div>
+                  <div><div style={{fontWeight:700,fontSize:12,color:P.text}}>{s.oradorNome}</div>{eb&&<div style={{fontSize:10,color:P.sky}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
+                  <div><div style={{fontSize:11,color:P.text}}>{s.cong}</div>{cong&&cong.end&&<div style={{fontSize:10,color:P.sub}}>{cong.end}</div>}{st&&<span style={{background:st.bg,color:st.color,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:6}}>{st.label}</span>}</div>
+                </div>
+              );})}
             </>
           )}
         </div>
-
         <div style={{display:"flex",gap:10}}>
           {[[filtV.length,"Visitantes",P.violet,P.violetL],[filtS.length,"Saídas",P.sky,P.skyL]].map(([v,l,c,bg])=>(
             <div key={l} style={{flex:1,background:bg,borderRadius:14,padding:"12px 0",textAlign:"center"}}>
@@ -963,9 +1084,136 @@ function RelatorioView({visitantes,saidas,esbocos,congregacoes}) {
   );
 }
 
-function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
+// ── NOVO: RELATÓRIO DE ORADORES ───────────────────────────
+function RelatorioOradores({oradores, saidas, esbocos}) {
+  const hoje = new Date();
+  const [mes, setMes] = useState(hoje.getMonth());
+  const [ano, setAno] = useState(hoje.getFullYear());
+  const [selecionados, setSelecionados] = useState([]);
   const [copiado, setCopiado] = useState(false);
 
+  // Compute rotation for all oradores
+  const oradorComRotacao = oradores.map(o => {
+    const saidasDoOrador = [...saidas]
+      .filter(s => s.oradorId === o.id)
+      .sort((a, b) => sortKey(b.data).localeCompare(sortKey(a.data)));
+    const ultima = saidasDoOrador[0] || null;
+    const ultimaData = ultima?.data || null;
+    const ultimaCong = ultima?.cong || null;
+    const dias = ultimaData ? daysSince(toIso(ultimaData)) : null;
+    const ebs = esbocos.filter(e => (o.esbocoIds||[]).includes(e.id));
+    return { ...o, ultimaData, ultimaCong, dias, ebs };
+  }).sort((a, b) => {
+    if (a.dias === null && b.dias === null) return a.nome.localeCompare(b.nome);
+    if (a.dias === null) return -1;
+    if (b.dias === null) return 1;
+    return b.dias - a.dias;
+  });
+
+  const toggleSel = (id) => setSelecionados(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleAll = () => setSelecionados(selecionados.length === oradorComRotacao.length ? [] : oradorComRotacao.map(o=>o.id));
+
+  const gerarRelatorio = async () => {
+    const sels = oradorComRotacao.filter(o => selecionados.includes(o.id));
+    const mesLabel = `${MESES[mes]} ${ano}`;
+    const linhas = [];
+    linhas.push(`📊 *Relatório de Oradores — ${mesLabel}*`);
+    linhas.push(`🏛 Congregação Alto da Colina`);
+    linhas.push(``);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━`);
+    sels.forEach((o, i) => {
+      if (i > 0) linhas.push(``);
+      const eb = o.ebs[0];
+      linhas.push(`🎤 *${o.nome}*`);
+      if (eb) linhas.push(`📑 Tema: ${eb.n} – ${eb.tema}`);
+      linhas.push(`📅 Última saída: ${o.ultimaData || "Nunca saiu"}`);
+      if (o.ultimaCong) linhas.push(`🏠 Congregação: ${o.ultimaCong}`);
+      linhas.push(`⏱ Intervalo: ${o.dias !== null ? `${o.dias} dias` : "Nunca saiu"}`);
+    });
+    linhas.push(``);
+    linhas.push(`━━━━━━━━━━━━━━━━━━━━━`);
+    linhas.push(`_${sels.length} orador${sels.length!==1?"es":""} · ${mesLabel}_`);
+    const texto = linhas.join("\n");
+    try {
+      if (navigator.share) { await navigator.share({ title:`Rel. Oradores ${mesLabel}`, text:texto }); return; }
+    } catch(_) {}
+    try { await navigator.clipboard.writeText(texto); }
+    catch(_) {
+      const ta = document.createElement("textarea");
+      ta.value = texto; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+    }
+    setCopiado(true); setTimeout(()=>setCopiado(false), 3000);
+  };
+
+  return (
+    <div style={{padding:"14px"}}>
+      {/* Month selector */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,background:`linear-gradient(135deg,${P.sky},${P.teal})`,borderRadius:14,padding:"12px 14px"}}>
+        <button onClick={()=>{if(mes===0){setMes(11);setAno(a=>a-1);}else setMes(m=>m-1);}}
+          style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontWeight:700}}>◀</button>
+        <div style={{flex:1,textAlign:"center",fontWeight:800,fontSize:15,color:"#fff"}}>{MESES[mes]} {ano}</div>
+        <button onClick={()=>{if(mes===11){setMes(0);setAno(a=>a+1);}else setMes(m=>m+1);}}
+          style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontWeight:700}}>▶</button>
+      </div>
+
+      {/* Header row */}
+      <div style={{display:"flex",alignItems:"center",marginBottom:10}}>
+        <div style={{flex:1,fontSize:12,fontWeight:700,color:P.sub}}>
+          {oradorComRotacao.length} ORADORES · {selecionados.length} SELECIONADO{selecionados.length!==1?"S":""}
+        </div>
+        <button onClick={toggleAll}
+          style={{background:P.slateL,border:"none",color:P.sub,borderRadius:8,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+          {selecionados.length === oradorComRotacao.length ? "Limpar" : "Todos"}
+        </button>
+      </div>
+
+      {/* Orador cards */}
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+        {oradorComRotacao.map(o => {
+          const cor = corRotacao(o.dias);
+          const sel = selecionados.includes(o.id);
+          const eb  = o.ebs[0];
+          return (
+            <div key={o.id} onClick={()=>toggleSel(o.id)}
+              style={{background:sel?P.skyL:P.white,borderRadius:14,padding:"12px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",cursor:"pointer",border:`2px solid ${sel?P.sky:P.border}`,display:"flex",alignItems:"center",gap:12,transition:"all .15s"}}>
+              {/* Checkbox */}
+              <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${sel?P.sky:P.border}`,background:sel?P.sky:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:13,fontWeight:700}}>
+                {sel?"✓":""}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:800,fontSize:13,color:P.text}}>{o.nome}</div>
+                {eb&&<div style={{fontSize:10,color:P.sky,marginTop:1}}>📑 {eb.n} – {eb.tema.slice(0,35)}</div>}
+                <div style={{fontSize:10,color:P.sub,marginTop:2}}>
+                  📅 {o.ultimaData||"Nunca"}{o.ultimaCong?` · 🏠 ${o.ultimaCong}`:""}
+                </div>
+              </div>
+              <span style={{background:cor.bg,color:cor.text,fontSize:11,fontWeight:800,padding:"4px 8px",borderRadius:8,flexShrink:0}}>
+                {cor.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Generate button */}
+      {selecionados.length > 0 && (
+        <button onClick={gerarRelatorio}
+          style={{width:"100%",background:copiado?"#16a34a":`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"14px",fontWeight:800,fontSize:14,cursor:"pointer",transition:"background .3s"}}>
+          {copiado ? "✓ Copiado!" : `📲 Copiar Relatório (${selecionados.length})`}
+        </button>
+      )}
+      {selecionados.length === 0 && (
+        <div style={{textAlign:"center",color:P.sub,fontSize:13,padding:"12px 0",fontStyle:"italic"}}>
+          Selecione os oradores para gerar o relatório
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
+  const [copiado, setCopiado] = useState(false);
   const compartilhar = async () => {
     const linhas = [];
     linhas.push(`📋 *Programação Discursos — ${mesLabel}*`);
@@ -977,76 +1225,39 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     linhas.push(`📥 *ORADORES VISITANTES*`);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-    if (filtV.length === 0) {
-      linhas.push(`_Nenhum visitante neste mês_`);
-    } else {
-      filtV.forEach((v,i) => {
-        const e = getEsboco(v.esbocoId);
-        if(i>0) linhas.push(``);
-        linhas.push(`📅 *${v.data}*`);
-        linhas.push(`🎤 Orador: ${v.orador}`);
-        linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
-        linhas.push(`🏠 Congregação: ${v.cong}`);
-      });
-    }
+    if (filtV.length === 0) { linhas.push(`_Nenhum visitante neste mês_`); }
+    else { filtV.forEach((v,i) => { const e=getEsboco(v.esbocoId); if(i>0)linhas.push(``); linhas.push(`📅 *${v.data}*`); linhas.push(`🎤 Orador: ${v.orador}`); linhas.push(`📑 Tema: ${e?`${e.n} – ${e.tema}`:"–"}`); linhas.push(`🏠 Congregação: ${v.cong}`); }); }
     linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     linhas.push(`📤 *SAÍDAS DE ORADORES*`);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-    if (filtS.length === 0) {
-      linhas.push(`_Nenhuma saída neste mês_`);
-    } else {
-      filtS.forEach((s,i) => {
-        const e = getEsboco(s.esbocoId);
-        const cong = getCong(s.cong);
-        if(i>0) linhas.push(``);
-        linhas.push(`📅 *${s.data}*`);
-        linhas.push(`🎤 Orador: ${s.oradorNome}`);
-        linhas.push(`📑 Tema: ${e ? `${e.n} – ${e.tema}` : "–"}`);
-        linhas.push(`🏠 Congregação: ${s.cong}`);
-        if (cong && cong.end) linhas.push(`📍 Endereço: ${cong.end}`);
-      });
-    }
+    if (filtS.length === 0) { linhas.push(`_Nenhuma saída neste mês_`); }
+    else { filtS.forEach((s,i) => { const e=getEsboco(s.esbocoId); const cong=getCong(s.cong); if(i>0)linhas.push(``); linhas.push(`📅 *${s.data}*`); linhas.push(`🎤 Orador: ${s.oradorNome}`); linhas.push(`📑 Tema: ${e?`${e.n} – ${e.tema}`:"–"}`); linhas.push(`🏠 Congregação: ${s.cong}`); if(cong&&cong.end)linhas.push(`📍 Endereço: ${cong.end}`); }); }
     linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     linhas.push(`📊 *Resumo:* ${filtV.length} visitante${filtV.length!==1?"s":""} | ${filtS.length} saída${filtS.length!==1?"s":""}`);
     linhas.push(``);
     linhas.push(`_Gerado em ${new Date().toLocaleDateString("pt-BR")} · Arranjo de Oradores_`);
-
     const texto = linhas.join("\n");
-
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: `Programação ${mesLabel}`, text: texto });
-      } else throw new Error("no share");
-    } catch(_e) {
-      try { await navigator.clipboard.writeText(texto); } catch(_e) {
-        const ta = document.createElement("textarea");
-        ta.value = texto; document.body.appendChild(ta); ta.select();
-        document.execCommand("copy"); document.body.removeChild(ta);
-      }
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 3000);
-    }
+    try { if(navigator.share){await navigator.share({title:`Programação ${mesLabel}`,text:texto});return;} } catch(_) {}
+    try { await navigator.clipboard.writeText(texto); } catch(_) { const ta=document.createElement("textarea");ta.value=texto;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta); }
+    setCopiado(true); setTimeout(()=>setCopiado(false),3000);
   };
-
   return (
     <div style={{position:"fixed",inset:0,background:P.bg,zIndex:999,overflowY:"auto",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{position:"sticky",top:0,background:P.white,borderBottom:`1px solid ${P.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,zIndex:1}}>
         <button onClick={onClose} style={{background:P.slateL,border:"none",borderRadius:10,padding:"8px 12px",cursor:"pointer",fontWeight:700,fontSize:13}}>← Voltar</button>
         <div style={{flex:1,fontWeight:800,fontSize:15,color:P.text}}>{mesLabel}</div>
         <button onClick={compartilhar} style={{background:copiado?"#16a34a":`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:10,padding:"8px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-          {copiado ? "✓ Copiado!" : "📲 Enviar WhatsApp"}
+          {copiado?"✓ Copiado!":"📲 Enviar WhatsApp"}
         </button>
       </div>
-
       <div style={{padding:"16px",maxWidth:600,margin:"0 auto"}}>
         <div style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,color:"#fff",borderRadius:14,padding:16,marginBottom:14}}>
           <div style={{fontWeight:900,fontSize:17,marginBottom:4}}>📋 Programação de Discursos</div>
           <div style={{fontSize:10,opacity:.85,lineHeight:1.6}}>Congregação Alto da Colina<br/>José do Patrocínio 249, Cidade Nova, Indaiatuba/SP<br/>Horário: 18:00</div>
           <div style={{fontWeight:900,fontSize:20,marginTop:8}}>{mesLabel}</div>
         </div>
-
         <div style={{display:"flex",gap:8,marginBottom:14}}>
           {[[filtV.length,"Visitantes","#7c3aed","#ede9fe"],[filtS.length,"Saídas","#0284c7","#e0f2fe"]].map(([v,l,c,bg])=>(
             <div key={l} style={{flex:1,background:bg,borderRadius:10,padding:"10px",textAlign:"center"}}>
@@ -1055,7 +1266,6 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
             </div>
           ))}
         </div>
-
         {[
           {items:filtV,tipo:"v",title:"📥 Oradores Visitantes",color:"#7c3aed",bg:"#ede9fe",badge:"#7c3aed"},
           {items:filtS,tipo:"s",title:"📤 Saídas de Oradores",color:"#0284c7",bg:"#e0f2fe",badge:"#0284c7"},
@@ -1066,24 +1276,23 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
               <span style={{background:sec.badge,color:"#fff",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{sec.items.length}</span>
             </div>
             {sec.items.length===0
-              ? <div style={{padding:16,textAlign:"center",color:P.sub,fontStyle:"italic",fontSize:12}}>Nenhum registro</div>
-              : sec.items.map((x,i)=>{
-                  const isV=sec.tipo==="v";
-                  const eb=getEsboco(x.esbocoId);
-                  const nome=isV?x.orador:x.oradorNome;
-                  const st=STATUS[x.status];
-                  return (
-                    <div key={x.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 1fr",gap:8,padding:"10px 14px",borderTop:`1px solid ${P.border}`,background:i%2===0?"#FAFBFC":"#fff",fontSize:12}}>
-                      <div style={{color:P.sky,fontWeight:700}}>{x.data.slice(0,5)}</div>
-                      <div><b>{nome}</b>{eb&&<div style={{color:sec.color,fontSize:10,marginTop:2}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
-                      <div style={{color:P.text}}>{x.cong}{st&&<div><span style={{background:st.bg,color:st.color,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:6,marginTop:4,display:"inline-block"}}>{st.label}</span></div>}</div>
-                    </div>
-                  );
-                })
+              ?<div style={{padding:16,textAlign:"center",color:P.sub,fontStyle:"italic",fontSize:12}}>Nenhum registro</div>
+              :sec.items.map((x,i)=>{
+                const isV=sec.tipo==="v";
+                const eb=getEsboco(x.esbocoId);
+                const nome=isV?x.orador:x.oradorNome;
+                const st=STATUS[x.status];
+                return(
+                  <div key={x.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 1fr",gap:8,padding:"10px 14px",borderTop:`1px solid ${P.border}`,background:i%2===0?"#FAFBFC":"#fff",fontSize:12}}>
+                    <div style={{color:P.sky,fontWeight:700}}>{x.data.slice(0,5)}</div>
+                    <div><b>{nome}</b>{eb&&<div style={{color:sec.color,fontSize:10,marginTop:2}}>📑 {eb.n} – {eb.tema.slice(0,30)}</div>}</div>
+                    <div style={{color:P.text}}>{x.cong}{st&&<div><span style={{background:st.bg,color:st.color,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:6,marginTop:4,display:"inline-block"}}>{st.label}</span></div>}</div>
+                  </div>
+                );
+              })
             }
           </div>
         ))}
-
         <div style={{textAlign:"center",fontSize:10,color:P.sub,fontStyle:"italic",paddingBottom:20}}>
           Gerado em {new Date().toLocaleDateString("pt-BR")} · Arranjo de Oradores
         </div>
@@ -1099,7 +1308,6 @@ function ModalLayer({modal,setModal,toast$,oradores,setOradores,visitantes,setVi
   const map={visitante:VisitanteForm,saida:SaidaForm,orador:OradorForm,cong:CongForm,esboco:EsbocoForm};
   const Comp=map[modal.type];
   if(!Comp)return null;
-
   return (
     <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
       <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,.5)",backdropFilter:"blur(4px)"}} onClick={close}/>
@@ -1149,19 +1357,14 @@ function EsbocoForm({modal,close,esbocos,setEsbocos,toast$}) {
   const save = async () => {
     if(!f.n||!f.tema) return toast$("Número e tema são obrigatórios",false);
     try {
-      if(isNew) {
-        const [res] = await db.insert("esbocos", toDB.esboco(f));
-        setEsbocos(p=>[...p,fromDB.esboco(res)]);
-      } else {
-        await db.update("esbocos", f.id, toDB.esboco(f));
-        setEsbocos(p=>p.map(e=>e.id===f.id?{...f,n:+f.n}:e));
-      }
+      if(isNew){const [res]=await db.insert("esbocos",toDB.esboco(f));setEsbocos(p=>[...p,fromDB.esboco(res)]);}
+      else{await db.update("esbocos",f.id,toDB.esboco(f));setEsbocos(p=>p.map(e=>e.id===f.id?{...f,n:+f.n}:e));}
       toast$(isNew?"Esboço adicionado!":"Esboço atualizado!"); close();
-    } catch(e) { toast$("Erro ao salvar: "+e.message, false); }
+    } catch(e){toast$("Erro ao salvar: "+e.message,false);}
   };
   const del = async () => {
-    try { await db.delete("esbocos", f.id); setEsbocos(p=>p.filter(e=>e.id!==f.id)); toast$("Esboço removido!"); close(); }
-    catch(e) { toast$("Erro ao remover", false); }
+    try{await db.delete("esbocos",f.id);setEsbocos(p=>p.filter(e=>e.id!==f.id));toast$("Esboço removido!");close();}
+    catch(e){toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Novo Esboço":"Editar Esboço"} color={P.teal} onClose={close} onSave={save} onDel={!isNew?del:null}>
@@ -1183,25 +1386,18 @@ function OradorForm({modal,close,oradores,setOradores,esbocos,toast$}) {
   const temasDisponiveis=esbocos.filter(e=>!(f.esbocoIds||[]).includes(e.id)).filter(e=>!pickerQ||e.tema.toLowerCase().includes(pickerQ.toLowerCase())||String(e.n).includes(pickerQ));
   const removeEsboco=id=>s("esbocoIds",(f.esbocoIds||[]).filter(x=>x!==id));
   const addEsboco=id=>{s("esbocoIds",[...(f.esbocoIds||[]),id]);setShowPicker(false);setPickerQ("");};
-
   const save = async () => {
     if(!f.nome||!f.cel) return toast$("Nome e celular são obrigatórios",false);
     try {
-      if(isNew) {
-        const [res] = await db.insert("oradores", toDB.orador(f));
-        setOradores(p=>[...p,fromDB.orador(res)]);
-      } else {
-        await db.update("oradores", f.id, toDB.orador(f));
-        setOradores(p=>p.map(o=>o.id===f.id?f:o));
-      }
+      if(isNew){const [res]=await db.insert("oradores",toDB.orador(f));setOradores(p=>[...p,fromDB.orador(res)]);}
+      else{await db.update("oradores",f.id,toDB.orador(f));setOradores(p=>p.map(o=>o.id===f.id?f:o));}
       toast$(isNew?"Orador adicionado!":"Orador atualizado!"); close();
-    } catch(e) { toast$("Erro ao salvar: "+e.message, false); }
+    } catch(e){toast$("Erro ao salvar: "+e.message,false);}
   };
   const del = async () => {
-    try { await db.delete("oradores", f.id); setOradores(p=>p.filter(o=>o.id!==f.id)); toast$("Orador removido!"); close(); }
-    catch(e) { toast$("Erro ao remover", false); }
+    try{await db.delete("oradores",f.id);setOradores(p=>p.filter(o=>o.id!==f.id));toast$("Orador removido!");close();}
+    catch(e){toast$("Erro ao remover",false);}
   };
-
   return (
     <Shell title={isNew?"Novo Orador":"Editar Orador"} color={ac} onClose={close} onSave={save} onDel={!isNew?del:null}>
       {f.nome&&<div style={{textAlign:"center",margin:"4px 0 10px"}}><div style={{width:60,height:60,borderRadius:20,background:ac,display:"inline-flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:900,fontSize:22}}>{initials(f.nome)}</div></div>}
@@ -1252,21 +1448,15 @@ function VisitanteForm({modal,close,visitantes,setVisitantes,esbocos,congregacoe
   const save = async () => {
     if(!f.cong||!f.data||!f.orador) return toast$("Congregação, data e orador são obrigatórios",false);
     try {
-      if(isNew) {
-        const [res] = await db.insert("visitantes", toDB.visit(f));
-        setVisitantes(p=>[...p,fromDB.visit(res)]);
-      } else {
-        await db.update("visitantes", f.id, toDB.visit(f));
-        setVisitantes(p=>p.map(v=>v.id===f.id?f:v));
-      }
+      if(isNew){const [res]=await db.insert("visitantes",toDB.visit(f));setVisitantes(p=>[...p,fromDB.visit(res)]);}
+      else{await db.update("visitantes",f.id,toDB.visit(f));setVisitantes(p=>p.map(v=>v.id===f.id?f:v));}
       toast$(isNew?"Visitante adicionado!":"Visitante atualizado!"); close();
-    } catch(e) { toast$("Erro ao salvar: "+e.message, false); }
+    } catch(e){toast$("Erro ao salvar: "+e.message,false);}
   };
   const del = async () => {
-    try { await db.delete("visitantes", f.id); setVisitantes(p=>p.filter(v=>v.id!==f.id)); toast$("Removido!"); close(); }
-    catch(e) { toast$("Erro ao remover", false); }
+    try{await db.delete("visitantes",f.id);setVisitantes(p=>p.filter(v=>v.id!==f.id));toast$("Removido!");close();}
+    catch(e){toast$("Erro ao remover",false);}
   };
-
   return (
     <Shell title={isNew?"Nova Visita":"Editar Visita"} color={P.violet} onClose={close} onSave={save} onDel={!isNew?del:null}>
       <FL>Congregação Visitante *</FL>
@@ -1292,29 +1482,22 @@ function VisitanteForm({modal,close,visitantes,setVisitantes,esbocos,congregacoe
 function SaidaForm({modal,close,saidas,setSaidas,oradores,congregacoes,esbocos,toast$}) {
   const isNew=!modal.data;
   const primeiroOrador=oradores[0];
-  const [f,setF]=useState(modal.data||{data:"",oradorId:primeiroOrador ? primeiroOrador.id : null,oradorNome:primeiroOrador?primeiroOrador.nome:"",cong:"",esbocoId:null,status:"pendente"});
+  const [f,setF]=useState(modal.data||{data:"",oradorId:primeiroOrador?primeiroOrador.id:null,oradorNome:primeiroOrador?primeiroOrador.nome:"",cong:"",esbocoId:null,status:"pendente"});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
   const oradorSel=oradores.find(o=>o.id===f.oradorId);
   const temasDoOrador=oradorSel?esbocos.filter(e=>(oradorSel.esbocoIds||[]).includes(e.id)).sort((a,b)=>a.n-b.n):[];
-
   const save = async () => {
     if(!f.data||!f.cong) return toast$("Data e congregação são obrigatórios",false);
     try {
-      if(isNew) {
-        const [res] = await db.insert("saidas", toDB.saida(f));
-        setSaidas(p=>[...p,fromDB.saida(res)]);
-      } else {
-        await db.update("saidas", f.id, toDB.saida(f));
-        setSaidas(p=>p.map(x=>x.id===f.id?f:x));
-      }
+      if(isNew){const [res]=await db.insert("saidas",toDB.saida(f));setSaidas(p=>[...p,fromDB.saida(res)]);}
+      else{await db.update("saidas",f.id,toDB.saida(f));setSaidas(p=>p.map(x=>x.id===f.id?f:x));}
       toast$(isNew?"Saída adicionada!":"Saída atualizada!"); close();
-    } catch(e) { toast$("Erro ao salvar: "+e.message, false); }
+    } catch(e){toast$("Erro ao salvar: "+e.message,false);}
   };
   const del = async () => {
-    try { await db.delete("saidas", f.id); setSaidas(p=>p.filter(x=>x.id!==f.id)); toast$("Removido!"); close(); }
-    catch(e) { toast$("Erro ao remover", false); }
+    try{await db.delete("saidas",f.id);setSaidas(p=>p.filter(x=>x.id!==f.id));toast$("Removido!");close();}
+    catch(e){toast$("Erro ao remover",false);}
   };
-
   return (
     <Shell title={isNew?"Nova Saída":"Editar Saída"} color={P.sky} onClose={close} onSave={save} onDel={!isNew?del:null}>
       <FL>Data</FL><FI type="date" value={toIso(f.data)} onChange={e=>s("data",toBr(e.target.value))}/>
@@ -1325,11 +1508,11 @@ function SaidaForm({modal,close,saidas,setSaidas,oradores,congregacoes,esbocos,t
       </FS>
       <FL>Tema do discurso</FL>
       {temasDoOrador.length===0
-        ? <div style={{background:P.slateL,borderRadius:12,padding:"10px 14px",fontSize:12,color:P.sub}}>Selecione um orador com temas vinculados</div>
-        : <FS value={f.esbocoId||""} onChange={e=>s("esbocoId",+e.target.value||null)}>
-            <option value="">Selecionar tema…</option>
-            {temasDoOrador.map(e=><option key={e.id} value={e.id}>{e.n} – {e.tema}</option>)}
-          </FS>
+        ?<div style={{background:P.slateL,borderRadius:12,padding:"10px 14px",fontSize:12,color:P.sub}}>Selecione um orador com temas vinculados</div>
+        :<FS value={f.esbocoId||""} onChange={e=>s("esbocoId",+e.target.value||null)}>
+          <option value="">Selecionar tema…</option>
+          {temasDoOrador.map(e=><option key={e.id} value={e.id}>{e.n} – {e.tema}</option>)}
+        </FS>
       }
       <FL>Congregação de Destino</FL>
       <FS value={f.cong} onChange={e=>s("cong",e.target.value)}>
@@ -1348,21 +1531,15 @@ function CongForm({modal,close,congregacoes,setCongregacoes,toast$}) {
   const save = async () => {
     if(!f.nome) return toast$("Nome é obrigatório",false);
     try {
-      if(isNew) {
-        const [res] = await db.insert("congregacoes", toDB.cong(f));
-        setCongregacoes(p=>[...p,fromDB.cong(res)]);
-      } else {
-        await db.update("congregacoes", f.id, toDB.cong(f));
-        setCongregacoes(p=>p.map(c=>c.id===f.id?f:c));
-      }
+      if(isNew){const [res]=await db.insert("congregacoes",toDB.cong(f));setCongregacoes(p=>[...p,fromDB.cong(res)]);}
+      else{await db.update("congregacoes",f.id,toDB.cong(f));setCongregacoes(p=>p.map(c=>c.id===f.id?f:c));}
       toast$(isNew?"Congregação adicionada!":"Congregação atualizada!"); close();
-    } catch(e) { toast$("Erro ao salvar: "+e.message, false); }
+    } catch(e){toast$("Erro ao salvar: "+e.message,false);}
   };
   const del = async () => {
-    try { await db.delete("congregacoes", f.id); setCongregacoes(p=>p.filter(c=>c.id!==f.id)); toast$("Removido!"); close(); }
-    catch(e) { toast$("Erro ao remover", false); }
+    try{await db.delete("congregacoes",f.id);setCongregacoes(p=>p.filter(c=>c.id!==f.id));toast$("Removido!");close();}
+    catch(e){toast$("Erro ao remover",false);}
   };
-
   return (
     <Shell title={isNew?"Nova Congregação":"Editar Congregação"} color={P.amber} onClose={close} onSave={save} onDel={!isNew?del:null}>
       <FL>Nome *</FL><FI value={f.nome} onChange={e=>s("nome",e.target.value)} placeholder="Nome da congregação"/>
