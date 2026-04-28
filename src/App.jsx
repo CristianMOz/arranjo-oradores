@@ -235,7 +235,7 @@ const SAIDAS_INIT = [];
 
 // ── SUPABASE CONFIG ───────────────────────────────────────
 const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || "https://khmjqdxwhxefaacelcoc.supabase.co";
-const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtobWpxZHh3aHhlZmFhY2VsY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjQ5MTUsImV4cCI6MjA5MDQ0MDkxNX0.3zFJfVHmqCFmJJF3rYzG4d2zOlGnfpMww7wrOW1B1fM";
+const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_WpxheVx83u-4RjvliUXhpw_m29Sbum3";
 
 const supa = async (method, table, body = null, query = "") => {
   const sess = (typeof auth !== 'undefined') ? auth.getSession() : null;
