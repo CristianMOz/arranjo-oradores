@@ -258,12 +258,76 @@ const supa = async (method, table, body = null, query = "") => {
   return text ? JSON.parse(text) : null;
 };
 
-const db = {
+const dbReal = {
   getAll: (table, order="id") => supa("GET", table, null, `?order=${order}`),
   insert: (table, data) => supa("POST", table, data),
   update: (table, id, data) => supa("PATCH", table, data, `?id=eq.${id}`),
   delete: (table, id) => supa("DELETE", table, null, `?id=eq.${id}`),
 };
+
+// ── DEMO MODE ─────────────────────────────────────────────
+const DEMO_MODE = typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("demo") === "1";
+
+const DEMO_SEED_ORADORES = [
+  {id:1,nome:"João da Silva",cel:"11987654321",esboco_ids:[1,5,8,12],status:"confirmado"},
+  {id:2,nome:"Pedro Henrique",cel:"11912345678",esboco_ids:[2,7,15],status:"confirmado"},
+  {id:3,nome:"Carlos Eduardo",cel:"11955554444",esboco_ids:[3,10,20],status:"confirmado"},
+  {id:4,nome:"Marcos Antonio",cel:"11933332222",esboco_ids:[4,9],status:"confirmado"},
+  {id:5,nome:"Lucas Fernando",cel:"11977778888",esboco_ids:[6,11,18],status:"pendente"},
+];
+const DEMO_SEED_CONGS = [
+  {id:1,nome:"Vila Nova",dia:"Sábado",hora:"19:00",contato:"Irmão Antonio",tel:"11911112222",end:"Rua das Flores, 100"},
+  {id:2,nome:"Centro",dia:"Domingo",hora:"10:00",contato:"Irmão Roberto",tel:"11933334444",end:"Av. Principal, 500"},
+];
+const demoSeedFor = (table) => {
+  if (table === "esbocos") return ESBOCOS_INIT.map(e => ({id:e.id,n:e.n,tema:e.tema,ultimo:e.ultimo||""}));
+  if (table === "oradores") return DEMO_SEED_ORADORES;
+  if (table === "congregacoes") return DEMO_SEED_CONGS;
+  return [];
+};
+const demoKey = (t) => `demo_${t}`;
+const demoLoad = (table) => {
+  try {
+    const raw = localStorage.getItem(demoKey(table));
+    if (raw === null) {
+      const seed = demoSeedFor(table);
+      localStorage.setItem(demoKey(table), JSON.stringify(seed));
+      return JSON.parse(JSON.stringify(seed));
+    }
+    return JSON.parse(raw);
+  } catch { return []; }
+};
+const demoSave = (table, data) => {
+  try { localStorage.setItem(demoKey(table), JSON.stringify(data)); } catch {}
+};
+let _demoNextId = 100000;
+const demoNewId = () => ++_demoNextId;
+const demoResetAll = () => {
+  ["esbocos","oradores","congregacoes","visitantes","saidas"].forEach(t => localStorage.removeItem(demoKey(t)));
+};
+const dbDemo = {
+  getAll: async (table) => demoLoad(table),
+  insert: async (table, data) => {
+    const arr = demoLoad(table);
+    const row = { id: demoNewId(), ...data };
+    arr.push(row);
+    demoSave(table, arr);
+    return [row];
+  },
+  update: async (table, id, data) => {
+    const arr = demoLoad(table).map(r => r.id === id ? { ...r, ...data } : r);
+    demoSave(table, arr);
+    return null;
+  },
+  delete: async (table, id) => {
+    const arr = demoLoad(table).filter(r => r.id !== id);
+    demoSave(table, arr);
+    return null;
+  },
+};
+
+const db = DEMO_MODE ? dbDemo : dbReal;
 
 // ── AUTH ─────────────────────────────────────────────────
 const auth = {
@@ -348,7 +412,7 @@ const corRotacao = (dias) => {
 const SENHA_APP = "oradores2026";
 
 export default function App() {
-  const [logado, setLogado] = useState(() => localStorage.getItem("arranjo_logado") === "true");
+  const [logado, setLogado] = useState(() => DEMO_MODE || localStorage.getItem("arranjo_logado") === "true");
   if (!logado) return <LoginScreen onLogin={() => { localStorage.setItem("arranjo_logado","true"); setLogado(true); }}/>;
   return <MainApp session={{user:{email:""}}} onLogout={() => { localStorage.removeItem("arranjo_logado"); setLogado(false); }}/>;
 }
@@ -358,7 +422,7 @@ function MainApp({ session, onLogout }) {
   const [carregando, setCarregando] = useState(true);
   const [tab, setTab] = useState("home");
   const [esbocos, setEsbocos] = useState(ESBOCOS_INIT);
-  const [oradores, setOradores] = useState(ORADORES_INIT);
+  const [oradores, setOradores] = useState(DEMO_MODE ? [] : ORADORES_INIT);
   const [congregacoes, setCongregacoes] = useState(CONGS_INIT);
   const [visitantes, setVisitantes] = useState(VISITANTES_INIT);
   const [saidas, setSaidas] = useState(SAIDAS_INIT);
@@ -463,7 +527,14 @@ function MainApp({ session, onLogout }) {
         </div>
       )}
 
-      {erro && (
+      {DEMO_MODE && (
+        <div style={{background:"#FEF3C7",borderBottom:"2px solid #F59E0B",padding:"10px 14px",fontSize:12,color:"#92400E",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <span>🎯 MODO DEMONSTRAÇÃO — os dados ficam apenas no seu navegador.</span>
+          <button onClick={()=>{if(confirm("Apagar todos os dados do demo e recomeçar?")){demoResetAll();window.location.reload();}}} style={{background:"#F59E0B",color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Resetar demo</button>
+        </div>
+      )}
+
+      {erro && !DEMO_MODE && (
         <div style={{background:"#FEF3C7",borderBottom:"2px solid #F59E0B",padding:"10px 14px",fontSize:12,color:"#92400E",fontWeight:600}}>
           ⚠️ {erro}
         </div>
