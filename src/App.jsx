@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { cloneTenant, createTenantDb, loadAccessContext, supabase } from "./lib/supabase";
+import { selectMembership, tenantSlug } from "./lib/tenant-utils";
 
 // ── PALETTE ──────────────────────────────────────────────
 const P = {
@@ -18,6 +20,7 @@ const STATUS = {
 
 const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const DIAS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+const DIA_INDEX={Domingo:0,"Segunda-feira":1,"Terça-feira":2,"Quarta-feira":3,"Quinta-feira":4,"Sexta-feira":5,"Sábado":6};
 
 // ── DATA ─────────────────────────────────────────────────
 const ESBOCOS_INIT = [
@@ -233,38 +236,6 @@ const CONGS_INIT = [];
 const VISITANTES_INIT = [];
 const SAIDAS_INIT = [];
 
-// ── SUPABASE CONFIG ───────────────────────────────────────
-const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || "https://khmjqdxwhxefaacelcoc.supabase.co";
-const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_WpxheVx83u-4RjvliUXhpw_m29Sbum3";
-
-const supa = async (method, table, body = null, query = "") => {
-  const sess = (typeof auth !== 'undefined') ? auth.getSession() : null;
-  const token = (sess && sess.access_token) ? sess.access_token : SUPA_KEY;
-  const res = await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
-    method,
-    headers: {
-      "apikey": SUPA_KEY,
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "Prefer": method === "POST" ? "return=representation" : "return=minimal",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Supabase ${method} ${table}: ${err}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-};
-
-const dbReal = {
-  getAll: (table, order="id") => supa("GET", table, null, `?order=${order}`),
-  insert: (table, data) => supa("POST", table, data),
-  update: (table, id, data) => supa("PATCH", table, data, `?id=eq.${id}`),
-  delete: (table, id) => supa("DELETE", table, null, `?id=eq.${id}`),
-};
-
 // ── DEMO MODE ─────────────────────────────────────────────
 const DEMO_MODE = typeof window !== "undefined" &&
   new URLSearchParams(window.location.search).get("demo") === "1";
@@ -299,7 +270,7 @@ const demoLoad = (table) => {
   } catch { return []; }
 };
 const demoSave = (table, data) => {
-  try { localStorage.setItem(demoKey(table), JSON.stringify(data)); } catch {}
+  try { localStorage.setItem(demoKey(table), JSON.stringify(data)); } catch { /* armazenamento demo é opcional */ }
 };
 let _demoNextId = 100000;
 const demoNewId = () => ++_demoNextId;
@@ -327,44 +298,6 @@ const dbDemo = {
   },
 };
 
-const db = DEMO_MODE ? dbDemo : dbReal;
-
-// ── AUTH ─────────────────────────────────────────────────
-const auth = {
-  signIn: async (email, password) => {
-    const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error_description || data.msg || "Erro ao entrar");
-    return data;
-  },
-  signUp: async (email, password) => {
-    const res = await fetch(`${SUPA_URL}/auth/v1/signup`, {
-      method: "POST",
-      headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error_description || data.msg || "Erro ao cadastrar");
-    return data;
-  },
-  signOut: async (token) => {
-    await fetch(`${SUPA_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${token}` },
-    });
-  },
-  getSession: () => {
-    try { return JSON.parse(localStorage.getItem("arranjo_session") || "null"); }
-    catch(_e) { return null; }
-  },
-  saveSession: (session) => { localStorage.setItem("arranjo_session", JSON.stringify(session)); },
-  clearSession: () => localStorage.removeItem("arranjo_session"),
-};
-
 const fromDB = {
   esboco: e => ({ id:e.id, n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ id:o.id, nome:o.nome, cel:o.cel||"", esbocoIds:o.esboco_ids||[], status:o.status }),
@@ -377,12 +310,10 @@ const toDB = {
   esboco: e => ({ n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ nome:o.nome, cel:o.cel||"", esboco_ids:o.esbocoIds||[], status:o.status }),
   cong: c => ({ nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", end:c.end||"" }),
-  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"Alto da Colina", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
+  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
   saida: s => ({ data:s.data, cong:s.cong, orador_id:s.oradorId||null, orador_nome:s.oradorNome||"", esboco_id:s.esbocoId||null, status:s.status }),
 };
 
-let _id = 5000;
-const uid = () => ++_id;
 const initials = n => n ? n.split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase() : "?";
 const avatarColor = n => {
   const c=[P.sky,P.teal,P.violet,P.rose,P.amber,P.lime,"#EC4899","#6366F1","#0284C7"];
@@ -409,15 +340,164 @@ const corRotacao = (dias) => {
 };
 
 // ── APP ──────────────────────────────────────────────────
-const SENHA_APP = "oradores2026";
+const DEMO_TENANT = {
+  id: "demo",
+  name: "Congregação Demonstração",
+  slug: "demo",
+  meeting_day: "Sábado",
+  meeting_time: "19:00",
+  address: "",
+  timezone: "America/Sao_Paulo",
+};
 
 export default function App() {
-  const [logado, setLogado] = useState(() => DEMO_MODE || localStorage.getItem("arranjo_logado") === "true");
-  if (!logado) return <LoginScreen onLogin={() => { localStorage.setItem("arranjo_logado","true"); setLogado(true); }}/>;
-  return <MainApp session={{user:{email:""}}} onLogout={() => { localStorage.removeItem("arranjo_logado"); setLogado(false); }}/>;
+  if (DEMO_MODE) {
+    return <MainApp session={{ user: { email: "demo" } }} tenant={DEMO_TENANT} memberships={[]} />;
+  }
+  return <AuthenticatedApp />;
 }
 
-function MainApp({ session, onLogout }) {
+function AuthenticatedApp() {
+  const [session, setSession] = useState(undefined);
+  const [memberships, setMemberships] = useState(undefined);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState(() => localStorage.getItem("arranjo_tenant_id"));
+  const [accessError, setAccessError] = useState("");
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session || null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession || null);
+      if (!nextSession) setMemberships(undefined);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const refreshMemberships = useCallback(async () => {
+    if (!session) return;
+    setAccessError("");
+    try {
+      const access = await loadAccessContext();
+      const valid = (access.memberships || []).filter(row => row.tenant);
+      setIsPlatformAdmin(access.isPlatformAdmin);
+      setMemberships(valid);
+      if (valid.length && !valid.some(row => row.tenant.id === selectedTenantId)) {
+        setSelectedTenantId(valid[0].tenant.id);
+        localStorage.setItem("arranjo_tenant_id", valid[0].tenant.id);
+      }
+    } catch (error) {
+      console.error(error);
+      setAccessError("Não foi possível carregar seu acesso. Tente novamente.");
+      setMemberships([]);
+    }
+  }, [session, selectedTenantId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { refreshMemberships(); }, 0);
+    return () => clearTimeout(timer);
+  }, [refreshMemberships]);
+
+  const selectTenant = (tenantId) => {
+    localStorage.setItem("arranjo_tenant_id", tenantId);
+    setSelectedTenantId(tenantId);
+  };
+
+  const logout = async () => {
+    localStorage.removeItem("arranjo_tenant_id");
+    await supabase.auth.signOut();
+  };
+
+  if (session === undefined) return <FullPageLoading message="Verificando acesso…" />;
+  if (!session) return <LoginScreen />;
+  if (memberships === undefined) return <FullPageLoading message="Carregando congregação…" />;
+
+  const selected = selectMembership(memberships, selectedTenantId);
+  if (!selected) {
+    return <NoAccessScreen email={session.user.email} error={accessError} onRefresh={refreshMemberships} onLogout={logout} />;
+  }
+
+  return <MainApp key={selected.tenant.id} session={session} tenant={selected.tenant}
+    memberships={memberships} isPlatformAdmin={isPlatformAdmin} onTenantChange={selectTenant} onLogout={logout} />;
+}
+
+function FullPageLoading({ message }) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:`linear-gradient(135deg,${P.sky},${P.teal})`,alignItems:"center",justifyContent:"center",gap:14,color:"#fff",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{fontSize:52}}>📋</div>
+      <div style={{fontWeight:900,fontSize:22}}>Arranjo de Oradores</div>
+      <div style={{fontSize:13,opacity:.85}}>{message}</div>
+      <div style={{width:38,height:38,border:"4px solid rgba(255,255,255,.3)",borderTop:"4px solid #fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+    </div>
+  );
+}
+
+function NoAccessScreen({ email, error, onRefresh, onLogout }) {
+  return (
+    <div style={{display:"flex",height:"100vh",background:P.bg,alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:P.white,borderRadius:24,padding:30,width:"100%",maxWidth:440,boxShadow:"0 8px 32px rgba(0,0,0,.1)",textAlign:"center"}}>
+        <div style={{fontSize:46,marginBottom:10}}>🔐</div>
+        <div style={{fontWeight:900,fontSize:20,color:P.text}}>Aguardando liberação</div>
+        <div style={{fontSize:13,color:P.sub,margin:"8px 0 18px"}}>A conta <b>{email}</b> ainda não foi vinculada a uma congregação.</div>
+        {error && <div style={{background:P.roseL,color:P.rose,borderRadius:10,padding:10,fontSize:12,marginBottom:12}}>{error}</div>}
+        <button onClick={onRefresh} style={{width:"100%",background:P.sky,border:"none",color:"#fff",borderRadius:12,padding:13,fontWeight:800,cursor:"pointer"}}>Verificar novamente</button>
+        <button onClick={onLogout} style={{width:"100%",background:"transparent",border:"none",color:P.sub,padding:12,fontWeight:700,cursor:"pointer"}}>Sair desta conta</button>
+      </div>
+    </div>
+  );
+}
+
+function TenantAdminView({ sourceTenant }) {
+  const [name,setName]=useState("");
+  const [slug,setSlug]=useState("");
+  const [ownerEmail,setOwnerEmail]=useState("");
+  const [copySpeakers,setCopySpeakers]=useState(true);
+  const [copyContacts,setCopyContacts]=useState(true);
+  const [copyHistory,setCopyHistory]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState(null);
+
+  const updateName=(value)=>{
+    setName(value);
+    setSlug(tenantSlug(value));
+  };
+  const create=async()=>{
+    if(!name.trim()||!slug||!ownerEmail.includes("@")) return setMessage({ok:false,text:"Informe nome, identificador e e-mail do responsável."});
+    setSaving(true);setMessage(null);
+    try{
+      await cloneTenant({sourceTenantId:sourceTenant.id,name:name.trim(),slug,ownerEmail:ownerEmail.trim().toLowerCase(),copySpeakers,copyContacts,copyHistory});
+      setMessage({ok:true,text:`${name} foi criada. O responsável poderá acessar com ${ownerEmail}.`});
+      setName("");setSlug("");setOwnerEmail("");setCopyHistory(false);
+    }catch(error){setMessage({ok:false,text:error.message||"Não foi possível criar a congregação."});}
+    setSaving(false);
+  };
+  const option=(checked,setChecked,label,detail)=>(
+    <label style={{display:"flex",gap:10,alignItems:"flex-start",background:P.slateL,borderRadius:12,padding:12,cursor:"pointer"}}>
+      <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} style={{marginTop:3}}/>
+      <span><span style={{display:"block",fontWeight:800,fontSize:13,color:P.text}}>{label}</span><span style={{fontSize:11,color:P.sub}}>{detail}</span></span>
+    </label>
+  );
+  return(
+    <div style={{padding:"16px 14px 28px",maxWidth:560,margin:"0 auto"}}>
+      <div style={{background:P.white,borderRadius:18,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
+        <div style={{fontSize:18,fontWeight:900,color:P.text}}>Nova congregação</div>
+        <div style={{fontSize:12,color:P.sub,marginTop:4,marginBottom:14}}>Cria uma área isolada usando <b>{sourceTenant.name}</b> como modelo.</div>
+        <FL>Nome *</FL><FI value={name} onChange={e=>updateName(e.target.value)} placeholder="Nome da nova congregação"/>
+        <FL>Identificador *</FL><FI value={slug} onChange={e=>setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,""))} placeholder="nome-da-congregacao"/>
+        <FL>E-mail do responsável *</FL><FI type="email" value={ownerEmail} onChange={e=>setOwnerEmail(e.target.value)} placeholder="responsavel@exemplo.com"/>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:14}}>
+          {option(copySpeakers,setCopySpeakers,"Copiar oradores e temas","Inclui celulares e os temas associados a cada orador.")}
+          {option(copyContacts,setCopyContacts,"Copiar congregações de contato","Inclui endereços, contatos e telefones cadastrados.")}
+          {option(copyHistory,setCopyHistory,"Copiar histórico","Inclui visitantes e saídas já realizadas. Normalmente deixe desmarcado.")}
+        </div>
+        {message&&<div style={{marginTop:12,background:message.ok?P.tealL:P.roseL,color:message.ok?P.teal:P.rose,borderRadius:12,padding:12,fontSize:12,fontWeight:700}}>{message.ok?"✓":"✕"} {message.text}</div>}
+        <button onClick={create} disabled={saving} style={{width:"100%",marginTop:14,background:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:14,fontWeight:800,fontSize:14,cursor:"pointer"}}>{saving?"Criando…":"Criar congregação"}</button>
+      </div>
+    </div>
+  );
+}
+
+function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, onTenantChange, onLogout }) {
+  const db = useMemo(() => DEMO_MODE ? dbDemo : createTenantDb(tenant.id), [tenant.id]);
   const hoje = new Date();
   const [carregando, setCarregando] = useState(true);
   const [tab, setTab] = useState("home");
@@ -459,7 +539,7 @@ function MainApp({ session, onLogout }) {
       setCarregando(false);
     };
     carregar();
-  }, []);
+  }, [db]);
 
   useEffect(() => {
     if (carregando) return;
@@ -468,10 +548,10 @@ function MainApp({ session, onLogout }) {
         const [vi, sa] = await Promise.all([db.getAll("visitantes","data"), db.getAll("saidas","data")]);
         if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
         if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
-      } catch(e) {}
+      } catch { /* a próxima sincronização tentará novamente */ }
     }, 30000);
     return () => clearInterval(interval);
-  }, [carregando]);
+  }, [carregando, db]);
 
   const sincronizarAgora = async () => {
     setSincronizando(true);
@@ -486,7 +566,7 @@ function MainApp({ session, onLogout }) {
       if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
       if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
       toast$("Sincronizado!");
-    } catch(e) { toast$("Erro ao sincronizar", false); }
+    } catch { toast$("Erro ao sincronizar", false); }
     setTimeout(() => setSincronizando(false), 800);
   };
 
@@ -498,10 +578,11 @@ function MainApp({ session, onLogout }) {
     {id:"congs",    icon:"🏠",label:"Congs"},
     {id:"esbocos",  icon:"📑",label:"Esboços"},
     {id:"relatorio",icon:"📊",label:"Relatório"},
+    ...(isPlatformAdmin?[{id:"admin",icon:"⚙️",label:"Admin"}]:[]),
   ];
 
   const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null};
-  const ctx = {esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
+  const ctx = {db,tenant,esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:P.bg,fontFamily:"'Nunito',sans-serif",width:"100%",position:"relative"}}>
@@ -522,7 +603,7 @@ function MainApp({ session, onLogout }) {
         <div style={{position:"fixed",inset:0,background:`linear-gradient(135deg,${P.sky},${P.teal})`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,zIndex:9999}}>
           <div style={{fontSize:48}}>📋</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",letterSpacing:-.5}}>Arranjo de Oradores</div>
-          <div style={{fontSize:13,color:"rgba(255,255,255,.8)"}}>Congregação Alto da Colina</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.8)"}}>{tenant.name}</div>
           <div style={{width:40,height:40,border:"4px solid rgba(255,255,255,.3)",borderTop:"4px solid #fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
         </div>
       )}
@@ -546,7 +627,7 @@ function MainApp({ session, onLogout }) {
             <button onClick={()=>{if(viewMes===0){setViewMes(11);setViewAno(a=>a-1);}else setViewMes(m=>m-1);}} style={{...navBtn}}>◀</button>
             <div style={{flex:1,textAlign:"center"}}>
               <div style={{fontWeight:900,fontSize:16,color:P.text}}>{MESES[viewMes]} {viewAno}</div>
-              <div style={{fontSize:11,color:P.sub}}>Congregação Alto da Colina</div>
+              <div style={{fontSize:11,color:P.sub}}>{tenant.name}</div>
             </div>
             <button onClick={()=>{if(viewMes===11){setViewMes(0);setViewAno(a=>a+1);}else setViewMes(m=>m+1);}} style={{...navBtn}}>▶</button>
           </>
@@ -555,6 +636,12 @@ function MainApp({ session, onLogout }) {
             <div style={{flex:1}}>
               <div style={{fontWeight:900,fontSize:16,color:P.text}}>{(TABS.find(t=>t.id===tab)||{}).label}</div>
               <div style={{fontSize:11,color:P.sub}}>👤 {session && session.user ? session.user.email : ""}</div>
+              {memberships.length > 1 && (
+                <select value={tenant.id} onChange={e=>onTenantChange(e.target.value)}
+                  style={{background:P.slateL,border:"none",borderRadius:10,padding:"5px 8px",fontSize:11,marginTop:5,width:"100%"}}>
+                  {memberships.map(row=><option key={row.tenant.id} value={row.tenant.id}>{row.tenant.name}</option>)}
+                </select>
+              )}
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar…"
                 style={{background:P.slateL,border:"none",borderRadius:20,padding:"6px 12px",fontSize:12,width:"100%",marginTop:6,outline:"none"}}/>
             </div>
@@ -566,18 +653,19 @@ function MainApp({ session, onLogout }) {
         )}
         <button onClick={sincronizarAgora}
           style={{background:sincronizando?P.teal:P.slateL,border:"none",color:sincronizando?"#fff":P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer",transition:"all .3s"}}>🔄</button>
-        <button onClick={async ()=>{ await auth.signOut(session ? session.access_token : null); onLogout(); }}
+        <button onClick={onLogout}
           style={{background:P.slateL,border:"none",color:P.sub,width:34,height:34,borderRadius:12,fontSize:16,cursor:"pointer"}} title="Sair">🚪</button>
       </div>
 
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden"}}>
-        {tab==="home"       && <ProgramacaoMes visitantes={visitantes} saidas={saidas} esbocos={esbocos} mes={viewMes} ano={viewAno} setModal={setModal}/>}
+        {tab==="home"       && <ProgramacaoMes visitantes={visitantes} saidas={saidas} esbocos={esbocos} mes={viewMes} ano={viewAno} setModal={setModal} tenant={tenant}/>}
         {tab==="saida"      && <SaidaView {...ctx}/>}
         {tab==="visitante"  && <VisitanteView {...ctx}/>}
         {tab==="oradores"   && <OradoresView oradores={oradores} esbocos={esbocos} saidas={saidas} search={search} setModal={setModal}/>}
         {tab==="congs"      && <CongsView {...ctx}/>}
         {tab==="esbocos"    && <EsbocosView esbocos={esbocos} saidas={saidas} visitantes={visitantes} search={search} setModal={setModal}/>}
-        {tab==="relatorio"  && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} oradores={oradores}/>}
+        {tab==="relatorio"  && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} oradores={oradores} tenant={tenant}/>}
+        {tab==="admin"      && <TenantAdminView sourceTenant={tenant}/>}
       </div>
 
       <div style={{background:P.white,borderTop:`1px solid ${P.border}`,display:"flex",flexShrink:0,overflowX:"auto",position:"relative"}}>
@@ -610,13 +698,23 @@ function MainApp({ session, onLogout }) {
 const navBtn = {background:P.slateL,border:"none",width:34,height:34,borderRadius:12,fontSize:14,cursor:"pointer",color:P.sub,display:"flex",alignItems:"center",justifyContent:"center"};
 
 // ── LOGIN SCREEN ──────────────────────────────────────────
-function LoginScreen({ onLogin }) {
+function LoginScreen() {
+  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
-  const entrar = () => {
-    if (!senha) return setErro("Digite a senha de acesso");
-    if (senha !== SENHA_APP) return setErro("Senha incorreta");
-    onLogin();
+  const [enviando, setEnviando] = useState(false);
+  const [cadastro, setCadastro] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+
+  const entrar = async () => {
+    if (!email || !senha) return setErro("Digite seu e-mail e sua senha");
+    setEnviando(true); setErro(""); setMensagem("");
+    const result = cadastro
+      ? await supabase.auth.signUp({ email: email.trim(), password: senha })
+      : await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
+    setEnviando(false);
+    if (result.error) return setErro(result.error.message || "Não foi possível entrar");
+    if (cadastro && !result.data.session) setMensagem("Cadastro recebido. Confirme o link enviado ao seu e-mail.");
   };
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:`linear-gradient(135deg,${P.sky},${P.teal})`,alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Nunito',sans-serif"}}>
@@ -624,24 +722,35 @@ function LoginScreen({ onLogin }) {
       <div style={{textAlign:"center",marginBottom:32,color:"#fff"}}>
         <div style={{fontSize:56,marginBottom:8}}>📋</div>
         <div style={{fontWeight:900,fontSize:28,letterSpacing:-.5}}>Arranjo de Oradores</div>
-        <div style={{fontSize:15,opacity:.8,marginTop:4}}>Congregação Alto da Colina</div>
+        <div style={{fontSize:15,opacity:.8,marginTop:4}}>Acesso por congregação</div>
       </div>
       <div style={{background:"#fff",borderRadius:24,padding:32,width:"100%",maxWidth:400,boxShadow:"0 8px 32px rgba(0,0,0,.12)"}}>
         <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:18,fontWeight:800,color:P.text}}>🔒 Acesso Restrito</div>
-          <div style={{fontSize:13,color:P.sub,marginTop:4}}>Digite a senha para entrar</div>
+          <div style={{fontSize:18,fontWeight:800,color:P.text}}>🔒 {cadastro?"Criar conta":"Acesso restrito"}</div>
+          <div style={{fontSize:13,color:P.sub,marginTop:4}}>Use sua conta pessoal</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
           <div>
+            <label style={{fontSize:14,fontWeight:800,color:P.text,marginBottom:6,display:"block"}}>E-mail</label>
+            <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setErro("");}}
+              placeholder="seuemail@exemplo.com" autoComplete="email" autoFocus
+              style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:14,padding:"14px 16px",fontSize:16,outline:"none",color:P.text}}/>
+          </div>
+          <div>
             <label style={{fontSize:14,fontWeight:800,color:P.text,marginBottom:6,display:"block"}}>Senha</label>
             <input type="password" value={senha} onChange={e=>{setSenha(e.target.value);setErro("");}}
-              placeholder="Digite a senha..." onKeyDown={e=>e.key==="Enter"&&entrar()} autoFocus
+              placeholder="Mínimo de 6 caracteres" onKeyDown={e=>e.key==="Enter"&&entrar()} autoComplete={cadastro?"new-password":"current-password"}
               style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:14,padding:"14px 16px",fontSize:16,outline:"none",color:P.text}}/>
           </div>
           {erro&&<div style={{background:P.roseL,color:P.rose,borderRadius:12,padding:"12px 16px",fontSize:13,fontWeight:700,textAlign:"center"}}>❌ {erro}</div>}
-          <button onClick={entrar}
+          {mensagem&&<div style={{background:P.tealL,color:P.teal,borderRadius:12,padding:"12px 16px",fontSize:13,fontWeight:700,textAlign:"center"}}>✓ {mensagem}</div>}
+          <button onClick={entrar} disabled={enviando}
             style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"16px",fontWeight:800,fontSize:16,cursor:"pointer"}}>
-            Entrar →
+            {enviando?"Aguarde…":cadastro?"Criar conta":"Entrar →"}
+          </button>
+          <button onClick={()=>{setCadastro(v=>!v);setErro("");setMensagem("");}}
+            style={{background:"transparent",border:"none",color:P.sky,fontWeight:800,fontSize:13,cursor:"pointer",padding:4}}>
+            {cadastro?"Já tenho uma conta":"Primeiro acesso? Criar conta"}
           </button>
         </div>
       </div>
@@ -649,7 +758,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
+function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal,tenant}) {
   const mm=String(mes+1).padStart(2,"0");
   const aa=String(ano);
   const eventos=[];
@@ -659,9 +768,11 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
   eventos.forEach(e=>{if(!porDia[e.dia])porDia[e.dia]=[];porDia[e.dia].push(e);});
   const diasOrdenados=Object.keys(porDia).map(Number).sort((a,b)=>a-b);
   const diasNoMes=new Date(+aa,mes+1,0).getDate();
-  const sabados=[];
-  for(let d=1;d<=diasNoMes;d++){if(new Date(+aa,mes,d).getDay()===6)sabados.push(d);}
-  const sabadosSemArranjo=sabados.filter(d=>!porDia[d]);
+  const diaReuniao=tenant?.meeting_day||"Sábado";
+  const indiceReuniao=DIA_INDEX[diaReuniao]??6;
+  const diasReuniao=[];
+  for(let d=1;d<=diasNoMes;d++){if(new Date(+aa,mes,d).getDay()===indiceReuniao)diasReuniao.push(d);}
+  const diasSemArranjo=diasReuniao.filter(d=>!porDia[d]);
   const totalV=eventos.filter(e=>e.tipo==="visitante").length;
   const totalS=eventos.filter(e=>e.tipo==="saida").length;
   const getDiaSemana=dia=>DIAS[new Date(+aa,mes,dia).getDay()];
@@ -676,23 +787,23 @@ function ProgramacaoMes({visitantes,saidas,esbocos,mes,ano,setModal}) {
           <span style={{fontSize:20}}>📤</span>
           <div><div style={{fontWeight:900,fontSize:20,color:P.sky,lineHeight:1}}>{totalS}</div><div style={{fontSize:9,color:P.sub}}>Saídas</div></div>
         </div>
-        <div style={{flex:1,background:sabadosSemArranjo.length>0?P.roseL:P.limeL,borderRadius:14,padding:"10px 12px",display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:20}}>{sabadosSemArranjo.length>0?"⚠️":"✅"}</span>
-          <div><div style={{fontWeight:900,fontSize:20,color:sabadosSemArranjo.length>0?P.rose:P.lime,lineHeight:1}}>{sabadosSemArranjo.length}</div><div style={{fontSize:9,color:P.sub}}>Vazios</div></div>
+        <div style={{flex:1,background:diasSemArranjo.length>0?P.roseL:P.limeL,borderRadius:14,padding:"10px 12px",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20}}>{diasSemArranjo.length>0?"⚠️":"✅"}</span>
+          <div><div style={{fontWeight:900,fontSize:20,color:diasSemArranjo.length>0?P.rose:P.lime,lineHeight:1}}>{diasSemArranjo.length}</div><div style={{fontSize:9,color:P.sub}}>Vazios</div></div>
         </div>
       </div>
-      {sabadosSemArranjo.length>0&&(
+      {diasSemArranjo.length>0&&(
         <div style={{margin:"4px 14px 0",background:"#FFF7ED",border:`1.5px solid ${P.amber}44`,borderRadius:14,padding:12}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
             <span style={{fontSize:18}}>⚠️</span>
-            <span style={{fontWeight:800,fontSize:13,color:"#92400E"}}>{sabadosSemArranjo.length} sábado{sabadosSemArranjo.length>1?"s":""} sem arranjo</span>
+            <span style={{fontWeight:800,fontSize:13,color:"#92400E"}}>{diasSemArranjo.length} {diasSemArranjo.length>1?"reuniões":"reunião"} sem arranjo</span>
           </div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {sabadosSemArranjo.map(d=>(
+            {diasSemArranjo.map(d=>(
               <div key={d} style={{background:P.white,border:`1px solid ${P.amber}44`,borderRadius:10,padding:"6px 12px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center"}}>
-                <span style={{fontSize:11,color:P.sub,fontWeight:600}}>Sáb</span>
+                <span style={{fontSize:11,color:P.sub,fontWeight:600}}>{DIAS[indiceReuniao]}</span>
                 <span style={{fontSize:18,fontWeight:900,color:P.rose,lineHeight:1.1}}>{d}</span>
-                <span style={{fontSize:9,color:P.sub}}>19:00</span>
+                <span style={{fontSize:9,color:P.sub}}>{tenant?.meeting_time||"19:00"}</span>
               </div>
             ))}
           </div>
@@ -762,7 +873,7 @@ function VisitanteView({visitantes,esbocos,search,setModal}) {
   return (
     <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
       {rows.length===0&&<Empty/>}
-      {rows.map((v,i)=>{
+      {rows.map((v)=>{
         const st=STATUS[v.status]||STATUS.pendente;
         const eb=esbocos.find(e=>e.id===v.esbocoId);
         return (
@@ -793,7 +904,7 @@ function SaidaView({saidas,search,setModal}) {
   return (
     <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
       {rows.length===0&&<Empty/>}
-      {rows.map((s,i)=>{
+      {rows.map((s)=>{
         const st=STATUS[s.status]||STATUS.pendente;
         const ac=avatarColor(s.oradorNome);
         return (
@@ -904,7 +1015,7 @@ function OradoresView({oradores, esbocos, saidas, search, setModal}) {
       {/* Cards */}
       <div style={{flex:1,overflowY:"auto",padding:"0 14px 12px",display:"flex",flexDirection:"column",gap:10}}>
         {rows.length===0&&<Empty/>}
-        {rows.map((o,i)=>{
+        {rows.map((o)=>{
           const ac  = avatarColor(o.nome);
           const st  = STATUS[o.status]||STATUS.pendente;
           const ebs = esbocos.filter(e=>(o.esbocoIds||[]).includes(e.id));
@@ -1012,7 +1123,7 @@ function EsbocosView({esbocos, saidas, visitantes, search, setModal}) {
         <span style={{fontSize:10,color:P.sub}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:P.amber,marginRight:3}}/>90–180d moderado</span>
         <span style={{fontSize:10,color:P.sub}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:P.rose,marginRight:3}}/>&lt;90d recente</span>
       </div>
-      {rows.map((e,i)=>{
+      {rows.map((e)=>{
         const cor = corEsboco(e.dias);
         return (
           <div key={e.id} className="slide" onClick={()=>setModal({type:"esboco",data:e})}
@@ -1042,7 +1153,7 @@ function EsbocosView({esbocos, saidas, visitantes, search, setModal}) {
 }
 
 // ── RELATÓRIO VIEW — com sub-abas ─────────────────────────
-function RelatorioView({visitantes, saidas, esbocos, congregacoes, oradores}) {
+function RelatorioView({visitantes, saidas, esbocos, congregacoes, oradores, tenant}) {
   const [subTab, setSubTab] = useState("programacao");
 
   return (
@@ -1061,15 +1172,15 @@ function RelatorioView({visitantes, saidas, esbocos, congregacoes, oradores}) {
       </div>
 
       <div style={{flex:1,overflowY:"auto"}}>
-        {subTab==="programacao" && <ProgramacaoRelatorio visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes}/>}
-        {subTab==="oradores"    && <RelatorioOradores oradores={oradores} saidas={saidas} esbocos={esbocos}/>}
+        {subTab==="programacao" && <ProgramacaoRelatorio visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} tenant={tenant}/>}
+        {subTab==="oradores"    && <RelatorioOradores oradores={oradores} saidas={saidas} esbocos={esbocos} tenant={tenant}/>}
       </div>
     </div>
   );
 }
 
 // ── PROGRAMAÇÃO RELATORIO (existing logic extracted) ───────
-function ProgramacaoRelatorio({visitantes, saidas, esbocos, congregacoes}) {
+function ProgramacaoRelatorio({visitantes, saidas, esbocos, congregacoes, tenant}) {
   const hoje=new Date();
   const [mes,setMes]=useState(hoje.getMonth());
   const [ano,setAno]=useState(hoje.getFullYear());
@@ -1083,13 +1194,13 @@ function ProgramacaoRelatorio({visitantes, saidas, esbocos, congregacoes}) {
   const prevMes=()=>{if(mes===0){setMes(11);setAno(a=>a-1);}else setMes(m=>m-1);};
   const nextMes=()=>{if(mes===11){setMes(0);setAno(a=>a+1);}else setMes(m=>m+1);};
   const mesLabel=`${MESES[mes]} ${ano}`;
-  if(showPrint) return <PrintView mes={mes} ano={ano} filtV={filtV} filtS={filtS} getEsboco={getEsboco} getCong={getCong} mesLabel={mesLabel} onClose={()=>setShowPrint(false)}/>;
+  if(showPrint) return <PrintView filtV={filtV} filtS={filtS} getEsboco={getEsboco} getCong={getCong} mesLabel={mesLabel} tenant={tenant} onClose={()=>setShowPrint(false)}/>;
   const rowStyle=(i)=>({display:"grid",gridTemplateColumns:"70px 1fr 1fr",gap:6,padding:"10px 14px",background:i%2===0?"#FAFBFC":"#fff",fontSize:12});
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:"100%"}}>
       <div style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,color:"#fff",padding:"16px 14px"}}>
         <div style={{fontWeight:900,fontSize:15,textAlign:"center",marginBottom:4}}>Programação de Discursos</div>
-        <div style={{fontSize:11,textAlign:"center",opacity:.85,marginBottom:12}}>Congregação Alto da Colina</div>
+        <div style={{fontSize:11,textAlign:"center",opacity:.85,marginBottom:12}}>{tenant.name}</div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={prevMes} style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:10,padding:"8px 12px",cursor:"pointer",fontWeight:700}}>◀</button>
           <div style={{flex:1,textAlign:"center",fontWeight:800,fontSize:16}}>{mesLabel}</div>
@@ -1156,7 +1267,7 @@ function ProgramacaoRelatorio({visitantes, saidas, esbocos, congregacoes}) {
 }
 
 // ── NOVO: RELATÓRIO DE ORADORES ───────────────────────────
-function RelatorioOradores({oradores, saidas, esbocos}) {
+function RelatorioOradores({oradores, saidas, esbocos, tenant}) {
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth());
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -1189,7 +1300,7 @@ function RelatorioOradores({oradores, saidas, esbocos}) {
     const mesLabel = `${MESES[mes]} ${ano}`;
     const linhas = [];
     linhas.push(`📊 *Relatório de Oradores — ${mesLabel}*`);
-    linhas.push(`🏛 Congregação Alto da Colina`);
+    linhas.push(`🏛 ${tenant.name}`);
     linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━`);
     sels.forEach((o) => {
@@ -1208,9 +1319,9 @@ function RelatorioOradores({oradores, saidas, esbocos}) {
     const texto = linhas.join("\n");
     try {
       if (navigator.share) { await navigator.share({ title:`Rel. Oradores ${mesLabel}`, text:texto }); return; }
-    } catch(_) {}
+    } catch { /* compartilhamento cancelado ou indisponível */ }
     try { await navigator.clipboard.writeText(texto); }
-    catch(_) {
+    catch {
       const ta = document.createElement("textarea");
       ta.value = texto; document.body.appendChild(ta); ta.select();
       document.execCommand("copy"); document.body.removeChild(ta);
@@ -1284,15 +1395,15 @@ function RelatorioOradores({oradores, saidas, esbocos}) {
   );
 }
 
-function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
+function PrintView({filtV,filtS,getEsboco,getCong,mesLabel,tenant,onClose}) {
   const [copiado, setCopiado] = useState(false);
   const compartilhar = async () => {
     const linhas = [];
     linhas.push(`📋 *Programação Discursos — ${mesLabel}*`);
     linhas.push(``);
-    linhas.push(`🏛 *Congregação Alto da Colina*`);
-    linhas.push(`📍 José do Patrocínio 249, Cidade Nova, Indaiatuba/SP`);
-    linhas.push(`🕐 Sábado às *19:00*`);
+    linhas.push(`🏛 *${tenant.name}*`);
+    if(tenant.address) linhas.push(`📍 ${tenant.address}`);
+    linhas.push(`🕐 ${tenant.meeting_day} às *${tenant.meeting_time}*`);
     linhas.push(``);
     linhas.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     linhas.push(`📥 *ORADORES VISITANTES*`);
@@ -1311,8 +1422,8 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
     linhas.push(``);
     linhas.push(`_Gerado em ${new Date().toLocaleDateString("pt-BR")} · Arranjo de Oradores_`);
     const texto = linhas.join("\n");
-    try { if(navigator.share){await navigator.share({title:`Programação ${mesLabel}`,text:texto});return;} } catch(_) {}
-    try { await navigator.clipboard.writeText(texto); } catch(_) { const ta=document.createElement("textarea");ta.value=texto;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta); }
+    try { if(navigator.share){await navigator.share({title:`Programação ${mesLabel}`,text:texto});return;} } catch { /* compartilhamento cancelado ou indisponível */ }
+    try { await navigator.clipboard.writeText(texto); } catch { const ta=document.createElement("textarea");ta.value=texto;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta); }
     setCopiado(true); setTimeout(()=>setCopiado(false),3000);
   };
   return (
@@ -1327,7 +1438,7 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
       <div style={{padding:"16px",maxWidth:600,margin:"0 auto"}}>
         <div style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,color:"#fff",borderRadius:14,padding:16,marginBottom:14}}>
           <div style={{fontWeight:900,fontSize:17,marginBottom:4}}>📋 Programação de Discursos</div>
-          <div style={{fontSize:10,opacity:.85,lineHeight:1.6}}>Congregação Alto da Colina<br/>José do Patrocínio 249, Cidade Nova, Indaiatuba/SP<br/>Horário: 18:00</div>
+          <div style={{fontSize:10,opacity:.85,lineHeight:1.6}}>{tenant.name}<br/>{tenant.address&&<>{tenant.address}<br/></>}Horário: {tenant.meeting_time}</div>
           <div style={{fontWeight:900,fontSize:20,marginTop:8}}>{mesLabel}</div>
         </div>
         <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -1374,9 +1485,9 @@ function PrintView({mes,ano,filtV,filtS,getEsboco,getCong,mesLabel,onClose}) {
 }
 
 // ── MODAL LAYER ───────────────────────────────────────────
-function ModalLayer({modal,setModal,toast$,oradores,setOradores,visitantes,setVisitantes,saidas,setSaidas,congregacoes,setCongregacoes,esbocos,setEsbocos}) {
+function ModalLayer({modal,setModal,db,tenant,toast$,oradores,setOradores,visitantes,setVisitantes,saidas,setSaidas,congregacoes,setCongregacoes,esbocos,setEsbocos}) {
   const close=()=>setModal(null);
-  const p={close,toast$,oradores,setOradores,visitantes,setVisitantes,saidas,setSaidas,congregacoes,setCongregacoes,esbocos,setEsbocos};
+  const p={db,tenant,close,toast$,oradores,setOradores,visitantes,setVisitantes,saidas,setSaidas,congregacoes,setCongregacoes,esbocos,setEsbocos};
   const map={visitante:VisitanteForm,saida:SaidaForm,orador:OradorForm,cong:CongForm,esboco:EsbocoForm};
   const Comp=map[modal.type];
   if(!Comp)return null;
@@ -1422,7 +1533,7 @@ const StatusPills=({val,onChange})=>(
 );
 
 // ── FORMS ─────────────────────────────────────────────────
-function EsbocoForm({modal,close,esbocos,setEsbocos,toast$}) {
+function EsbocoForm({modal,close,db,setEsbocos,toast$}) {
   const isNew=!modal.data;
   const [f,setF]=useState(modal.data||{n:"",tema:"",ultimo:""});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -1436,7 +1547,7 @@ function EsbocoForm({modal,close,esbocos,setEsbocos,toast$}) {
   };
   const del = async () => {
     try{await db.delete("esbocos",f.id);setEsbocos(p=>p.filter(e=>e.id!==f.id));toast$("Esboço removido!");close();}
-    catch(e){toast$("Erro ao remover",false);}
+    catch{toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Novo Esboço":"Editar Esboço"} color={P.teal} onClose={close} onSave={save} onDel={!isNew?del:null}>
@@ -1447,7 +1558,7 @@ function EsbocoForm({modal,close,esbocos,setEsbocos,toast$}) {
   );
 }
 
-function OradorForm({modal,close,oradores,setOradores,esbocos,toast$}) {
+function OradorForm({modal,close,db,setOradores,esbocos,toast$}) {
   const isNew=!modal.data;
   const [f,setF]=useState(modal.data||{nome:"",cel:"",esbocoIds:[],status:"pendente"});
   const [showPicker,setShowPicker]=useState(false);
@@ -1468,7 +1579,7 @@ function OradorForm({modal,close,oradores,setOradores,esbocos,toast$}) {
   };
   const del = async () => {
     try{await db.delete("oradores",f.id);setOradores(p=>p.filter(o=>o.id!==f.id));toast$("Orador removido!");close();}
-    catch(e){toast$("Erro ao remover",false);}
+    catch{toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Novo Orador":"Editar Orador"} color={ac} onClose={close} onSave={save} onDel={!isNew?del:null}>
@@ -1513,9 +1624,9 @@ function OradorForm({modal,close,oradores,setOradores,esbocos,toast$}) {
   );
 }
 
-function VisitanteForm({modal,close,visitantes,setVisitantes,esbocos,congregacoes,toast$}) {
+function VisitanteForm({modal,close,db,tenant,setVisitantes,esbocos,congregacoes,toast$}) {
   const isNew=!modal.data;
-  const [f,setF]=useState(modal.data||{cong:"",dia:"Sábado",data:"",hora:"19:00",orador:"",esbocoId:null,congregacaoLocal:"Alto da Colina",endereco:"",relatorioId:"",status:"pendente"});
+  const [f,setF]=useState(modal.data||{cong:"",dia:tenant.meeting_day||"Sábado",data:"",hora:tenant.meeting_time||"19:00",orador:"",esbocoId:null,congregacaoLocal:tenant.name,endereco:"",relatorioId:"",status:"pendente"});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
   const save = async () => {
     if(!f.cong||!f.data||!f.orador) return toast$("Congregação, data e orador são obrigatórios",false);
@@ -1527,7 +1638,7 @@ function VisitanteForm({modal,close,visitantes,setVisitantes,esbocos,congregacoe
   };
   const del = async () => {
     try{await db.delete("visitantes",f.id);setVisitantes(p=>p.filter(v=>v.id!==f.id));toast$("Removido!");close();}
-    catch(e){toast$("Erro ao remover",false);}
+    catch{toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Nova Visita":"Editar Visita"} color={P.violet} onClose={close} onSave={save} onDel={!isNew?del:null}>
@@ -1551,7 +1662,7 @@ function VisitanteForm({modal,close,visitantes,setVisitantes,esbocos,congregacoe
   );
 }
 
-function SaidaForm({modal,close,saidas,setSaidas,oradores,congregacoes,esbocos,toast$}) {
+function SaidaForm({modal,close,db,setSaidas,oradores,congregacoes,esbocos,toast$}) {
   const isNew=!modal.data;
   const primeiroOrador=oradores[0];
   const [f,setF]=useState(modal.data||{data:"",oradorId:primeiroOrador?primeiroOrador.id:null,oradorNome:primeiroOrador?primeiroOrador.nome:"",cong:"",esbocoId:null,status:"pendente"});
@@ -1568,7 +1679,7 @@ function SaidaForm({modal,close,saidas,setSaidas,oradores,congregacoes,esbocos,t
   };
   const del = async () => {
     try{await db.delete("saidas",f.id);setSaidas(p=>p.filter(x=>x.id!==f.id));toast$("Removido!");close();}
-    catch(e){toast$("Erro ao remover",false);}
+    catch{toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Nova Saída":"Editar Saída"} color={P.sky} onClose={close} onSave={save} onDel={!isNew?del:null}>
@@ -1596,7 +1707,7 @@ function SaidaForm({modal,close,saidas,setSaidas,oradores,congregacoes,esbocos,t
   );
 }
 
-function CongForm({modal,close,congregacoes,setCongregacoes,toast$}) {
+function CongForm({modal,close,db,setCongregacoes,toast$}) {
   const isNew=!modal.data;
   const [f,setF]=useState(modal.data||{nome:"",dia:"Domingo",hora:"9:00",contato:"",tel:"",end:""});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -1610,7 +1721,7 @@ function CongForm({modal,close,congregacoes,setCongregacoes,toast$}) {
   };
   const del = async () => {
     try{await db.delete("congregacoes",f.id);setCongregacoes(p=>p.filter(c=>c.id!==f.id));toast$("Removido!");close();}
-    catch(e){toast$("Erro ao remover",false);}
+    catch{toast$("Erro ao remover",false);}
   };
   return (
     <Shell title={isNew?"Nova Congregação":"Editar Congregação"} color={P.amber} onClose={close} onSave={save} onDel={!isNew?del:null}>
