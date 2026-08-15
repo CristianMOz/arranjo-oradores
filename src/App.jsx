@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { cloneTenant, createTenantDb, loadAccessContext, supabase } from "./lib/supabase";
 import { selectMembership, tenantSlug } from "./lib/tenant-utils";
-
-// ── PALETTE ──────────────────────────────────────────────
-const P = {
-  sky:"#0EA5E9",skyL:"#E0F2FE",teal:"#14B8A6",tealL:"#CCFBF1",
-  violet:"#8B5CF6",violetL:"#EDE9FE",rose:"#F43F5E",roseL:"#FFE4E6",
-  amber:"#F59E0B",amberL:"#FEF3C7",lime:"#84CC16",limeL:"#ECFCCB",
-  slate:"#64748B",slateL:"#F1F5F9",bg:"#F8FAFC",white:"#FFFFFF",
-  text:"#0F172A",sub:"#64748B",border:"#E2E8F0",
-};
-
-const STATUS = {
-  confirmado:{label:"Confirmado",color:P.lime,bg:P.limeL},
-  pendente:{label:"Pendente",color:P.amber,bg:P.amberL},
-  cancelado:{label:"Cancelado",color:P.rose,bg:P.roseL},
-  realizado:{label:"Realizado",color:P.teal,bg:P.tealL},
-};
+import { P, STATUS } from "./lib/theme";
+import { FI, FL, FS } from "./ui/forms";
+import WhatsAppView from "./WhatsAppView";
 
 const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const DIAS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
@@ -416,7 +403,7 @@ function AuthenticatedApp() {
     return <NoAccessScreen email={session.user.email} error={accessError} onRefresh={refreshMemberships} onLogout={logout} />;
   }
 
-  return <MainApp key={selected.tenant.id} session={session} tenant={selected.tenant}
+  return <MainApp key={selected.tenant.id} session={session} tenant={selected.tenant} role={selected.role}
     memberships={memberships} isPlatformAdmin={isPlatformAdmin} onTenantChange={selectTenant} onLogout={logout} />;
 }
 
@@ -496,7 +483,7 @@ function TenantAdminView({ sourceTenant }) {
   );
 }
 
-function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, onTenantChange, onLogout }) {
+function MainApp({ session, tenant, role = "viewer", memberships = [], isPlatformAdmin = false, onTenantChange, onLogout }) {
   const db = useMemo(() => DEMO_MODE ? dbDemo : createTenantDb(tenant.id), [tenant.id]);
   const hoje = new Date();
   const [carregando, setCarregando] = useState(true);
@@ -578,10 +565,11 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
     {id:"congs",    icon:"🏠",label:"Congs"},
     {id:"esbocos",  icon:"📑",label:"Esboços"},
     {id:"relatorio",icon:"📊",label:"Relatório"},
+    {id:"whatsapp", icon:"📲",label:"WhatsApp"},
     ...(isPlatformAdmin?[{id:"admin",icon:"⚙️",label:"Admin"}]:[]),
   ];
 
-  const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null};
+  const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null,whatsapp:null};
   const ctx = {db,tenant,esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
 
   return (
@@ -665,6 +653,7 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
         {tab==="congs"      && <CongsView {...ctx}/>}
         {tab==="esbocos"    && <EsbocosView esbocos={esbocos} saidas={saidas} visitantes={visitantes} search={search} setModal={setModal}/>}
         {tab==="relatorio"  && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} oradores={oradores} tenant={tenant}/>}
+        {tab==="whatsapp"   && <WhatsAppView tenant={tenant} role={role} userId={session?.user?.id} isPlatformAdmin={isPlatformAdmin} demo={DEMO_MODE} toast$={toast$}/>}
         {tab==="admin"      && <TenantAdminView sourceTenant={tenant}/>}
       </div>
 
@@ -1546,9 +1535,6 @@ function Shell({title,color=P.sky,onClose,onSave,onDel,children}) {
   );
 }
 
-const FL=({children})=><div style={{fontSize:13,fontWeight:800,color:P.text,marginBottom:6,marginTop:12}}>{children}</div>;
-const FI=({style,...p})=><input {...p} style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",color:P.text,...style}}/>;
-const FS=({children,...p})=><select {...p} style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",color:P.text}}>{children}</select>;
 const StatusPills=({val,onChange})=>(
   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:4}}>
     {Object.entries(STATUS).map(([k,v])=>(

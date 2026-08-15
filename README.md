@@ -11,6 +11,10 @@ Aplicativo React/Vite para programação de discursos, preparado para múltiplas
 - Acesso anônimo às tabelas operacionais é revogado.
 - Administradores da plataforma podem criar uma congregação copiando dados selecionados de uma congregação-modelo.
 
+## Avisos de WhatsApp
+
+Cada congregação configura os próprios avisos na aba **📲 WhatsApp**: quem pode enviar, qual número é usado, em que dia e hora o preparo roda e os modelos de mensagem. Toda semana o banco monta a fila do próximo fim de semana de cada congregação separadamente, confere se o aviso já não foi enviado e registra tudo. O padrão é **modo prévia com revisão manual**; o envio automático só liga depois, com um provedor configurado. Detalhes em [docs/WHATSAPP.md](docs/WHATSAPP.md).
+
 ## Desenvolvimento
 
 ```bash
@@ -25,4 +29,7 @@ Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` na Vercel. Somente a ch
 
 ## Migração
 
-A migração está em `supabase/migrations/20260814111500_multi_tenant_foundation.sql`. O procedimento de produção está em [docs/MULTI_TENANT_ROLLOUT.md](docs/MULTI_TENANT_ROLLOUT.md).
+As migrações ficam em `supabase/migrations/`, aplicadas em ordem:
+
+1. `20260814111500_multi_tenant_foundation.sql` — isolamento multi-congregação. Procedimento em [docs/MULTI_TENANT_ROLLOUT.md](docs/MULTI_TENANT_ROLLOUT.md).
+2. `20260815120000_whatsapp_por_congregacao.sql` — avisos de WhatsApp. Procedimento em [docs/WHATSAPP.md](docs/WHATSAPP.md).
