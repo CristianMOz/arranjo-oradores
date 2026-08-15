@@ -706,15 +706,34 @@ function LoginScreen() {
   const [cadastro, setCadastro] = useState(false);
   const [mensagem, setMensagem] = useState("");
 
+  const authRedirectTo = `${window.location.origin}/`;
+
   const entrar = async () => {
     if (!email || !senha) return setErro("Digite seu e-mail e sua senha");
     setEnviando(true); setErro(""); setMensagem("");
     const result = cadastro
-      ? await supabase.auth.signUp({ email: email.trim(), password: senha })
+      ? await supabase.auth.signUp({
+          email: email.trim(),
+          password: senha,
+          options: { emailRedirectTo: authRedirectTo },
+        })
       : await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
     setEnviando(false);
     if (result.error) return setErro(result.error.message || "Não foi possível entrar");
     if (cadastro && !result.data.session) setMensagem("Cadastro recebido. Confirme o link enviado ao seu e-mail.");
+  };
+
+  const reenviarConfirmacao = async () => {
+    if (!email) return setErro("Digite o e-mail usado no cadastro");
+    setEnviando(true); setErro(""); setMensagem("");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: email.trim(),
+      options: { emailRedirectTo: authRedirectTo },
+    });
+    setEnviando(false);
+    if (error) return setErro(error.message || "Não foi possível reenviar a confirmação");
+    setMensagem("Novo link enviado. Use somente o e-mail mais recente.");
   };
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:`linear-gradient(135deg,${P.sky},${P.teal})`,alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Nunito',sans-serif"}}>
@@ -748,6 +767,12 @@ function LoginScreen() {
             style={{background:`linear-gradient(135deg,${P.sky},${P.teal})`,border:"none",color:"#fff",borderRadius:14,padding:"16px",fontWeight:800,fontSize:16,cursor:"pointer"}}>
             {enviando?"Aguarde…":cadastro?"Criar conta":"Entrar →"}
           </button>
+          {cadastro&&mensagem&&(
+            <button onClick={reenviarConfirmacao} disabled={enviando}
+              style={{background:P.slateL,border:"none",color:P.text,borderRadius:14,padding:"12px",fontWeight:800,fontSize:13,cursor:"pointer"}}>
+              Reenviar confirmação
+            </button>
+          )}
           <button onClick={()=>{setCadastro(v=>!v);setErro("");setMensagem("");}}
             style={{background:"transparent",border:"none",color:P.sky,fontWeight:800,fontSize:13,cursor:"pointer",padding:4}}>
             {cadastro?"Já tenho uma conta":"Primeiro acesso? Criar conta"}
