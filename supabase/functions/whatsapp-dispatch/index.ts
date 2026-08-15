@@ -3,6 +3,13 @@
 // Só toca em congregações com `mode = 'automatico'` e provedor configurado.
 // Congregações em modo prévia continuam sendo enviadas manualmente pelo app.
 //
+// BLOQUEADO PARA PRODUÇÃO (C5). A credencial do provedor ainda é única para
+// toda a instalação, então uma congregação poderia disparar usando o número
+// de outra. O banco só deixa o administrador da plataforma ligar o modo
+// automático, e aqui a Cloud API exige WHATSAPP_META_ENABLED=1 explícito.
+// Antes de liberar de verdade: credencial por congregação e validação de que
+// o phone_number_id pertence àquela congregação.
+//
 // Deploy:  supabase functions deploy whatsapp-dispatch
 // Segredos: supabase secrets set WHATSAPP_DISPATCH_SECRET=... WHATSAPP_TOKEN=...
 //
@@ -13,6 +20,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const DISPATCH_SECRET = Deno.env.get("WHATSAPP_DISPATCH_SECRET") ?? "";
 const META_TOKEN = Deno.env.get("WHATSAPP_TOKEN") ?? "";
+const META_ENABLED = Deno.env.get("WHATSAPP_META_ENABLED") === "1";
 const META_VERSION = Deno.env.get("WHATSAPP_API_VERSION") ?? "v21.0";
 const WEBHOOK_URL = Deno.env.get("WHATSAPP_WEBHOOK_URL") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("WHATSAPP_WEBHOOK_SECRET") ?? "";
@@ -43,6 +51,12 @@ const rest = (path: string, init: RequestInit = {}) =>
   });
 
 async function sendViaMeta(settings: Settings, message: Message) {
+  if (!META_ENABLED) {
+    throw new Error(
+      "Cloud API bloqueada: credenciais ainda não são isoladas por congregação (C5). " +
+        "Defina WHATSAPP_META_ENABLED=1 somente em ambiente de teste.",
+    );
+  }
   if (!META_TOKEN) throw new Error("WHATSAPP_TOKEN não configurado");
   if (!settings.provider_phone_id) throw new Error("Phone Number ID não configurado");
 

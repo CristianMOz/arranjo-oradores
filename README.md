@@ -13,7 +13,9 @@ Aplicativo React/Vite para programação de discursos, preparado para múltiplas
 
 ## Avisos de WhatsApp
 
-Cada congregação configura os próprios avisos na aba **📲 WhatsApp**: quem pode enviar, qual número é usado, em que dia e hora o preparo roda e os modelos de mensagem. Toda semana o banco monta a fila do próximo fim de semana de cada congregação separadamente, confere se o aviso já não foi enviado e registra tudo. O padrão é **modo prévia com revisão manual**; o envio automático só liga depois, com um provedor configurado. Detalhes em [docs/WHATSAPP.md](docs/WHATSAPP.md).
+Cada congregação configura os próprios avisos na aba **📲 WhatsApp**: quem pode enviar, quando o preparo roda, para quem avisar (orador, responsável ou ambos) e os modelos de mensagem. Toda semana o banco monta a fila do **próximo dia de reunião daquela congregação** — usando o `meeting_day` já cadastrado —, confere se o aviso já não foi enviado e registra tudo.
+
+O envio é **manual, com revisão prévia**. O modo automático está bloqueado no servidor até que as credenciais do provedor sejam isoladas por congregação. Detalhes e procedimento em [docs/WHATSAPP.md](docs/WHATSAPP.md).
 
 ## Desenvolvimento
 

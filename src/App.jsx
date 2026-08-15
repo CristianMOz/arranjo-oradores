@@ -288,16 +288,16 @@ const dbDemo = {
 const fromDB = {
   esboco: e => ({ id:e.id, n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ id:o.id, nome:o.nome, cel:o.cel||"", esbocoIds:o.esboco_ids||[], status:o.status }),
-  cong: c => ({ id:c.id, nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", end:c.end||"" }),
-  visit: v => ({ id:v.id, cong:v.cong, dia:v.dia, data:v.data, hora:v.hora, orador:v.orador, esbocoId:v.esboco_id, congregacaoLocal:v.congregacao_local||"", endereco:v.endereco||"", relatorioId:v.relatorio_id||"", status:v.status }),
+  cong: c => ({ id:c.id, nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", whatsapp:c.whatsapp||"", end:c.end||"" }),
+  visit: v => ({ id:v.id, cong:v.cong, dia:v.dia, data:v.data, hora:v.hora, orador:v.orador, oradorTel:v.orador_tel||"", esbocoId:v.esboco_id, congregacaoLocal:v.congregacao_local||"", endereco:v.endereco||"", relatorioId:v.relatorio_id||"", status:v.status }),
   saida: s => ({ id:s.id, data:s.data, cong:s.cong, oradorId:s.orador_id, oradorNome:s.orador_nome||"", esbocoId:s.esboco_id, status:s.status }),
 };
 
 const toDB = {
   esboco: e => ({ n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ nome:o.nome, cel:o.cel||"", esboco_ids:o.esbocoIds||[], status:o.status }),
-  cong: c => ({ nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", end:c.end||"" }),
-  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
+  cong: c => ({ nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", whatsapp:c.whatsapp||"", end:c.end||"" }),
+  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, orador_tel:v.oradorTel||"", esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
   saida: s => ({ data:s.data, cong:s.cong, orador_id:s.oradorId||null, orador_nome:s.oradorNome||"", esboco_id:s.esbocoId||null, status:s.status }),
 };
 
@@ -1637,8 +1637,14 @@ function OradorForm({modal,close,db,setOradores,esbocos,toast$}) {
 
 function VisitanteForm({modal,close,db,tenant,setVisitantes,esbocos,congregacoes,toast$}) {
   const isNew=!modal.data;
-  const [f,setF]=useState(modal.data||{cong:"",dia:tenant.meeting_day||"Sábado",data:"",hora:tenant.meeting_time||"19:00",orador:"",esbocoId:null,congregacaoLocal:tenant.name,endereco:"",relatorioId:"",status:"pendente"});
+  const [f,setF]=useState(modal.data||{cong:"",dia:tenant.meeting_day||"Sábado",data:"",hora:tenant.meeting_time||"19:00",orador:"",oradorTel:"",esbocoId:null,congregacaoLocal:tenant.name,endereco:"",relatorioId:"",status:"pendente"});
+  // A congregação pode não estar cadastrada; nesse caso o nome é digitado à mão.
+  const [outraCong,setOutraCong]=useState(()=>Boolean(modal.data?.cong)&&!congregacoes.some(c=>c.nome===modal.data.cong));
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  const escolherCong=(valor)=>{
+    if(valor==="__outro"){setOutraCong(true);s("cong","");}
+    else{setOutraCong(false);s("cong",valor);}
+  };
   const save = async () => {
     if(!f.cong||!f.data||!f.orador) return toast$("Congregação, data e orador são obrigatórios",false);
     try {
@@ -1654,15 +1660,25 @@ function VisitanteForm({modal,close,db,tenant,setVisitantes,esbocos,congregacoes
   return (
     <Shell title={isNew?"Nova Visita":"Editar Visita"} color={P.violet} onClose={close} onSave={save} onDel={!isNew?del:null}>
       <FL>Congregação Visitante *</FL>
-      <FS value={f.cong} onChange={e=>s("cong",e.target.value)}>
+      <FS value={outraCong?"__outro":f.cong} onChange={e=>escolherCong(e.target.value)}>
         <option value="">Selecionar…</option>
         {congregacoes.map(c=><option key={c.id} value={c.nome}>{c.nome}</option>)}
         <option value="__outro">Outra congregação</option>
       </FS>
-      {f.cong==="__outro"&&<FI value="" onChange={e=>s("cong",e.target.value)} placeholder="Nome da congregação"/>}
+      {outraCong&&(
+        <>
+          <FI value={f.cong} onChange={e=>s("cong",e.target.value)} placeholder="Nome da congregação" style={{marginTop:8}}/>
+          <div style={{fontSize:11,color:P.sub,marginTop:4}}>
+            Congregação fora do cadastro: o lembrete ao responsável ficará sem número.
+          </div>
+        </>
+      )}
       <FL>Data *</FL><FI type="date" value={toIso(f.data)} onChange={e=>s("data",toBr(e.target.value))}/>
       <FL>Hora</FL><FI type="time" value={f.hora} onChange={e=>s("hora",e.target.value)}/>
       <FL>Orador *</FL><FI value={f.orador} onChange={e=>s("orador",e.target.value)} placeholder="Nome do orador visitante"/>
+      <FL>WhatsApp do orador</FL>
+      <FI type="tel" value={f.oradorTel} onChange={e=>s("oradorTel",e.target.value)} placeholder="(19) 99999-9999"/>
+      <div style={{fontSize:11,color:P.sub,marginTop:4}}>Necessário para enviar o lembrete direto ao orador visitante.</div>
       <FL>Tema / Esboço</FL>
       <FS value={f.esbocoId||""} onChange={e=>s("esbocoId",+e.target.value||null)}>
         <option value="">Nenhum</option>
@@ -1720,7 +1736,7 @@ function SaidaForm({modal,close,db,setSaidas,oradores,congregacoes,esbocos,toast
 
 function CongForm({modal,close,db,setCongregacoes,toast$}) {
   const isNew=!modal.data;
-  const [f,setF]=useState(modal.data||{nome:"",dia:"Domingo",hora:"9:00",contato:"",tel:"",end:""});
+  const [f,setF]=useState(modal.data||{nome:"",dia:"Domingo",hora:"9:00",contato:"",tel:"",whatsapp:"",end:""});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
   const save = async () => {
     if(!f.nome) return toast$("Nome é obrigatório",false);
@@ -1743,7 +1759,14 @@ function CongForm({modal,close,db,setCongregacoes,toast$}) {
       </FS>
       <FL>Horário *</FL><FI value={f.hora} onChange={e=>s("hora",e.target.value)} placeholder="Ex: 9:00"/>
       <FL>Contato *</FL><FI value={f.contato} onChange={e=>s("contato",e.target.value)}/>
-      <FL>Telefone</FL><FI type="tel" value={f.tel} onChange={e=>s("tel",e.target.value)}/>
+      <FL>Telefone geral</FL><FI type="tel" value={f.tel} onChange={e=>s("tel",e.target.value)}/>
+      <FL>WhatsApp do responsável</FL>
+      <FI type="tel" value={f.whatsapp} onChange={e=>s("whatsapp",e.target.value)} placeholder="(19) 99999-9999"/>
+      <div style={{fontSize:11,color:P.sub,marginTop:4}}>
+        {f.whatsapp?.trim()
+          ? "Os lembretes ao responsável vão para este número."
+          : "Em branco, os lembretes usam o telefone geral — que pode não ser WhatsApp."}
+      </div>
       <FL>Endereço</FL><FI value={f.end} onChange={e=>s("end",e.target.value)}/>
     </Shell>
   );

@@ -2,20 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { P } from "./lib/theme";
 import { FI, FL, FS, FT } from "./ui/forms";
 import {
-  CAMPOS_SAIDA, CAMPOS_VISITANTE, DIAS_SEMANA, EXEMPLO_SAIDA, EXEMPLO_VISITANTE,
-  MENSAGEM_STATUS, MODELOS_PADRAO,
-  atualizarMensagem, carregarConfigWhatsapp, carregarExecucoes, carregarMembros,
-  carregarMensagens, definirRemetente, definirStatusMensagens, formatPhone, hojeIso,
-  janelaLabel, normalizePhone, prepararFila, renderTemplate, salvarConfigWhatsapp, waLink,
+  CAMPOS, CAMPOS_APELIDOS, CAMPOS_TEMPLATE, COMBINACOES, DESTINOS, DIAS_SEMANA,
+  EXEMPLOS, MENSAGEM_STATUS, MODELOS_PADRAO, PAPEL,
+  atualizarMensagem, brDate, carregarConfigWhatsapp, carregarExecucoes, carregarMembros,
+  carregarMensagens, definirRemetente, definirStatusMensagens, diasDeReuniao, formatPhone,
+  hojeIso, normalizePhone, prepararFila, proximasDatasReuniao, renderTemplate,
+  salvarConfigWhatsapp, waLink,
 } from "./lib/whatsapp";
 
 const card = {background:P.white,borderRadius:18,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,.06)"};
 const chip = (bg,color)=>({background:bg,color,fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:8,whiteSpace:"nowrap"});
-const brDate = (iso) => {
-  if (!iso) return "";
-  const [a,m,d] = String(iso).slice(0,10).split("-");
-  return d ? `${d}/${m}/${a}` : iso;
-};
 
 export default function WhatsAppView({ tenant, role, userId, isPlatformAdmin = false, demo = false, toast$ }) {
   const [aba, setAba] = useState("fila");
@@ -91,11 +87,7 @@ export default function WhatsAppView({ tenant, role, userId, isPlatformAdmin = f
     );
   }
 
-  const ABAS = [
-    ["fila","📤 Fila"],
-    ["config","⚙️ Configuração"],
-    ["historico","🧾 Execuções"],
-  ];
+  const ABAS = [["fila","📤 Fila"],["config","⚙️ Configuração"],["historico","🧾 Execuções"]];
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
@@ -114,7 +106,7 @@ export default function WhatsAppView({ tenant, role, userId, isPlatformAdmin = f
         )}
         {aba==="config" && (
           <ConfigView tenant={tenant} settings={settings} membros={membros} senders={senders}
-            podeConfigurar={podeConfigurar} toast$={toast$} onChange={recarregar}/>
+            podeConfigurar={podeConfigurar} isPlatformAdmin={isPlatformAdmin} toast$={toast$} onChange={recarregar}/>
         )}
         {aba==="historico" && <ExecucoesView execucoes={execucoes}/>}
       </div>
@@ -129,14 +121,14 @@ function FilaView({ tenant, settings, mensagens, podeEnviar, toast$, onChange })
   const [editando, setEditando] = useState(null);
 
   const hoje = hojeIso(tenant.timezone);
-  const janela = janelaLabel(hoje, settings?.window_days);
+  const dias = diasDeReuniao(tenant.meeting_day, settings?.extra_meeting_days);
+  const alvos = proximasDatasReuniao(hoje, dias, settings?.window_days);
 
-  const grupos = useMemo(() => {
-    const pendentes = mensagens.filter(m => ["rascunho","aprovado","sem_contato","falhou"].includes(m.status));
-    const enviados  = mensagens.filter(m => m.status === "enviado");
-    const arquivados = mensagens.filter(m => m.status === "cancelado");
-    return { pendentes, enviados, arquivados };
-  }, [mensagens]);
+  const grupos = useMemo(() => ({
+    pendentes: mensagens.filter(m => ["rascunho","aprovado","sem_contato","falhou"].includes(m.status)),
+    enviados: mensagens.filter(m => m.status === "enviado"),
+    arquivados: mensagens.filter(m => m.status === "cancelado"),
+  }), [mensagens]);
 
   const visiveis = filtro==="pendentes" ? grupos.pendentes
     : filtro==="enviados" ? grupos.enviados
@@ -181,12 +173,13 @@ function FilaView({ tenant, settings, mensagens, podeEnviar, toast$, onChange })
           {settings?.enabled
             ? `Preparo automático toda ${DIAS_SEMANA[settings.run_weekday]} às ${String(settings.run_time).slice(0,5)}.`
             : "Preparo automático desligado — gere a prévia manualmente."}
-          <br/>Janela atual: <b>{janela}</b> · Modo: <b>{settings?.mode === "automatico" ? "automático" : "prévia"}</b>
+          <br/>Próxima reunião: <b>{alvos.map(brDate).join(" e ") || "nenhuma no horizonte"}</b>
+          <br/>Modo: <b>{settings?.mode === "automatico" ? "automático" : "prévia com revisão manual"}</b>
         </div>
         {podeEnviar && (
           <button onClick={preparar} disabled={ocupado}
             style={{width:"100%",marginTop:12,background:"rgba(255,255,255,.22)",border:"1px solid rgba(255,255,255,.5)",color:"#fff",borderRadius:12,padding:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>
-            {ocupado ? "Processando…" : "🔄 Gerar prévia do próximo fim de semana"}
+            {ocupado ? "Processando…" : "🔄 Gerar prévia da próxima reunião"}
           </button>
         )}
       </div>
@@ -221,9 +214,7 @@ function FilaView({ tenant, settings, mensagens, podeEnviar, toast$, onChange })
       {aprovados.length > 0 && (
         <div style={{...card,background:P.skyL,fontSize:12,color:P.text,fontWeight:700}}>
           {aprovados.length} aviso{aprovados.length>1?"s":""} aprovado{aprovados.length>1?"s":""} aguardando envio.
-          {settings?.mode === "automatico"
-            ? " O disparador automático cuida deles na próxima execução."
-            : " Abra cada um no WhatsApp e marque como enviado."}
+          {" "}Abra cada um no WhatsApp e marque como enviado.
         </div>
       )}
 
@@ -253,6 +244,7 @@ function FilaView({ tenant, settings, mensagens, podeEnviar, toast$, onChange })
 function MensagemCard({ m, podeEnviar, ocupado, onAbrir, onStatus, onEditar }) {
   const [aberto, setAberto] = useState(false);
   const st = MENSAGEM_STATUS[m.status] || MENSAGEM_STATUS.rascunho;
+  const papel = PAPEL[m.recipient_role] || PAPEL.orador;
   const tipo = m.kind === "saida"
     ? { label:"Saída", color:P.sky, bg:P.skyL }
     : { label:"Visitante", color:P.violet, bg:P.violetL };
@@ -265,6 +257,11 @@ function MensagemCard({ m, podeEnviar, ocupado, onAbrir, onStatus, onEditar }) {
           <div style={{fontSize:11,color:P.sub,marginTop:2}}>
             📅 {brDate(m.target_date)} · 📱 {formatPhone(m.recipient_phone) || "sem número"}
           </div>
+          {m.phone_fallback && (
+            <div style={{fontSize:10,color:"#B45309",marginTop:3,fontWeight:700}}>
+              ⚠️ Usando o telefone geral da congregação — confirme se é WhatsApp.
+            </div>
+          )}
           {m.status === "enviado" && m.sent_at && (
             <div style={{fontSize:10,color:P.teal,marginTop:2,fontWeight:700}}>
               Enviado em {new Date(m.sent_at).toLocaleString("pt-BR")}
@@ -274,6 +271,7 @@ function MensagemCard({ m, podeEnviar, ocupado, onAbrir, onStatus, onEditar }) {
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"flex-end"}}>
           <span style={chip(tipo.bg,tipo.color)}>{tipo.label}</span>
+          <span style={chip(papel.bg,papel.color)}>{papel.label}</span>
           <span style={chip(st.bg,st.color)}>{st.label}</span>
         </div>
       </div>
@@ -358,7 +356,7 @@ function EditarMensagem({ m, onClose, onSaved, toast$ }) {
 }
 
 // ── CONFIGURAÇÃO ─────────────────────────────────────────────────────────
-function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$, onChange }) {
+function ConfigView({ tenant, settings, membros, senders, podeConfigurar, isPlatformAdmin, toast$, onChange }) {
   const [f, setF] = useState(() => ({
     enabled: settings.enabled,
     mode: settings.mode,
@@ -369,26 +367,37 @@ function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$
     run_weekday: settings.run_weekday,
     run_time: String(settings.run_time).slice(0,5),
     window_days: settings.window_days,
+    extra_meeting_days: settings.extra_meeting_days || [],
     notify_saidas: settings.notify_saidas,
     notify_visitantes: settings.notify_visitantes,
-    template_saida: settings.template_saida,
-    template_visitante: settings.template_visitante,
+    destino_saida: settings.destino_saida,
+    destino_visitante: settings.destino_visitante,
+    template_saida_orador: settings.template_saida_orador,
+    template_saida_responsavel: settings.template_saida_responsavel,
+    template_visitante_orador: settings.template_visitante_orador,
+    template_visitante_responsavel: settings.template_visitante_responsavel,
   }));
   const [salvando, setSalvando] = useState(false);
-  const [previewKind, setPreviewKind] = useState("saida");
+  const [combo, setCombo] = useState("saida_orador");
 
   const s = (k,v) => setF(x => ({...x, [k]: v}));
+  const campoModelo = CAMPOS_TEMPLATE[combo];
+  const diaPrincipal = diasDeReuniao(tenant.meeting_day, [])[0];
+  const dias = diasDeReuniao(tenant.meeting_day, f.extra_meeting_days);
+  const alvos = proximasDatasReuniao(hojeIso(tenant.timezone), dias, f.window_days);
 
-  const preview = useMemo(() => renderTemplate(
-    previewKind === "saida" ? f.template_saida : f.template_visitante,
-    previewKind === "saida" ? EXEMPLO_SAIDA : EXEMPLO_VISITANTE,
-  ), [f.template_saida, f.template_visitante, previewKind]);
+  const preview = useMemo(
+    () => renderTemplate(f[campoModelo], EXEMPLOS[combo]),
+    [f, campoModelo, combo],
+  );
 
-  const automaticoSemProvedor = f.mode === "automatico" && f.provider === "manual";
+  const alternarDiaExtra = (dia) => {
+    const atual = f.extra_meeting_days || [];
+    s("extra_meeting_days", atual.includes(dia) ? atual.filter(d => d !== dia) : [...atual, dia]);
+  };
 
   const salvar = async () => {
-    if (f.sender_phone.trim() && !normalizePhone(f.sender_phone)) return toast$("Número do remetente inválido", false);
-    if (automaticoSemProvedor) return toast$("Modo automático exige um provedor configurado", false);
+    if (f.sender_phone.trim() && !normalizePhone(f.sender_phone)) return toast$("Número de referência inválido", false);
     setSalvando(true);
     try {
       await salvarConfigWhatsapp(tenant.id, { ...f, run_time: `${f.run_time}:00` });
@@ -409,7 +418,7 @@ function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$
   if (!podeConfigurar) {
     return (
       <div style={{padding:"14px"}}>
-        <div style={{...card}}>
+        <div style={card}>
           <div style={{fontWeight:800,fontSize:14,color:P.text}}>Configuração de {tenant.name}</div>
           <div style={{fontSize:12,color:P.sub,marginTop:8,lineHeight:1.6}}>
             Somente o responsável (owner ou admin) altera estes ajustes.<br/>
@@ -429,7 +438,7 @@ function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$
       <div style={card}>
         <div style={{fontWeight:900,fontSize:16,color:P.text}}>Quando preparar</div>
         <div style={{fontSize:12,color:P.sub,marginTop:4}}>
-          Cada congregação tem seu próprio horário. O preparo só olha os arranjos desta congregação.
+          O preparo procura os discursos do <b>próximo dia de reunião desta congregação</b> — não uma janela solta de dias.
         </div>
 
         <label style={{display:"flex",gap:10,alignItems:"flex-start",background:P.slateL,borderRadius:12,padding:12,cursor:"pointer",marginTop:12}}>
@@ -440,66 +449,124 @@ function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$
           </span>
         </label>
 
-        <FL>Dia da semana</FL>
+        <FL>Dia em que o preparo roda</FL>
         <FS value={f.run_weekday} onChange={e=>s("run_weekday",Number(e.target.value))}>
           {DIAS_SEMANA.map((d,i)=><option key={d} value={i}>{d}</option>)}
         </FS>
         <FL>Horário ({tenant.timezone})</FL>
         <FI type="time" value={f.run_time} onChange={e=>s("run_time",e.target.value)}/>
-        <div style={{fontSize:11,color:P.sub,marginTop:4}}>O preparo roda na hora cheia mais próxima.</div>
-
-        <FL>Olhar quantos dias à frente</FL>
-        <FS value={f.window_days} onChange={e=>s("window_days",Number(e.target.value))}>
-          {[3,5,7,10,14].map(d=><option key={d} value={d}>{d} dias</option>)}
-        </FS>
-        <div style={{fontSize:11,color:P.sub,marginTop:4}}>7 dias a partir de segunda cobre o próximo fim de semana.</div>
-      </div>
-
-      <div style={card}>
-        <div style={{fontWeight:900,fontSize:16,color:P.text}}>O que avisar</div>
-        {[
-          ["notify_saidas","Saídas dos nossos oradores","Avisa o orador da congregação sobre o discurso fora."],
-          ["notify_visitantes","Oradores visitantes","Confirma com o contato da congregação de origem."],
-        ].map(([k,label,detail])=>(
-          <label key={k} style={{display:"flex",gap:10,alignItems:"flex-start",background:P.slateL,borderRadius:12,padding:12,cursor:"pointer",marginTop:10}}>
-            <input type="checkbox" checked={f[k]} onChange={e=>s(k,e.target.checked)} style={{marginTop:3}}/>
-            <span>
-              <span style={{display:"block",fontWeight:800,fontSize:13,color:P.text}}>{label}</span>
-              <span style={{fontSize:11,color:P.sub}}>{detail}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-
-      <div style={card}>
-        <div style={{fontWeight:900,fontSize:16,color:P.text}}>Como enviar</div>
-        <FL>Modo</FL>
-        <FS value={f.mode} onChange={e=>s("mode",e.target.value)}>
-          <option value="previa">Prévia — revisão manual antes de enviar (recomendado)</option>
-          <option value="automatico">Automático — dispara sem revisão</option>
-        </FS>
-        <FL>Provedor</FL>
-        <FS value={f.provider} onChange={e=>s("provider",e.target.value)}>
-          <option value="manual">Manual (abre o WhatsApp no celular)</option>
-          <option value="meta_cloud">WhatsApp Cloud API (Meta)</option>
-          <option value="webhook">Webhook próprio</option>
-        </FS>
-        {automaticoSemProvedor && (
-          <div style={{background:P.roseL,color:P.rose,borderRadius:12,padding:12,fontSize:12,fontWeight:700,marginTop:10}}>
-            O modo automático precisa de um provedor. Com “Manual” o envio é sempre feito por uma pessoa.
-          </div>
-        )}
-        <FL>Número usado no envio</FL>
-        <FI value={f.sender_phone} onChange={e=>s("sender_phone",e.target.value)} placeholder="(19) 99999-9999"/>
         <div style={{fontSize:11,color:P.sub,marginTop:4}}>
-          Guardado como <b>{normalizePhone(f.sender_phone) || "—"}</b>. Segredos e tokens do provedor ficam no Supabase, nunca aqui.
+          Se o servidor falhar nesse horário, o próximo ciclo recupera o dia — sem preparar duas vezes.
         </div>
-        {f.provider === "meta_cloud" && (
+
+        <FL>Dia de reunião da congregação</FL>
+        <div style={{background:P.slateL,borderRadius:12,padding:12,fontSize:12,color:P.text}}>
+          <b>{DIAS_SEMANA[diaPrincipal]}</b>, definido no cadastro da congregação.
+        </div>
+        <div style={{fontSize:12,fontWeight:800,color:P.sub,marginTop:12,marginBottom:6}}>TAMBÉM PROCURAR EM</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {DIAS_SEMANA.map((d,i)=>{
+            if (i === diaPrincipal) return null;
+            const ativo = (f.extra_meeting_days||[]).includes(i);
+            return (
+              <button key={d} onClick={()=>alternarDiaExtra(i)}
+                style={{background:ativo?P.sky:P.slateL,color:ativo?"#fff":P.sub,border:"none",borderRadius:20,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                {d.slice(0,3)}
+              </button>
+            );
+          })}
+        </div>
+
+        <FL>Horizonte de busca</FL>
+        <FS value={f.window_days} onChange={e=>s("window_days",Number(e.target.value))}>
+          {[7,10,14,21].map(d=><option key={d} value={d}>{d} dias</option>)}
+        </FS>
+        <div style={{background:P.tealL,borderRadius:12,padding:12,fontSize:12,color:"#0F766E",fontWeight:700,marginTop:10}}>
+          Com esta configuração, hoje o preparo procuraria discursos em: {alvos.map(brDate).join(" e ") || "nenhuma data"}.
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={{fontWeight:900,fontSize:16,color:P.text}}>O que avisar e para quem</div>
+
+        <label style={{display:"flex",gap:10,alignItems:"flex-start",background:P.slateL,borderRadius:12,padding:12,cursor:"pointer",marginTop:10}}>
+          <input type="checkbox" checked={f.notify_saidas} onChange={e=>s("notify_saidas",e.target.checked)} style={{marginTop:3}}/>
+          <span>
+            <span style={{display:"block",fontWeight:800,fontSize:13,color:P.text}}>📤 Saídas dos nossos oradores</span>
+            <span style={{fontSize:11,color:P.sub}}>Discurso do nosso orador em outra congregação.</span>
+          </span>
+        </label>
+        {f.notify_saidas && (
           <>
-            <FL>Phone Number ID (Meta)</FL>
-            <FI value={f.provider_phone_id} onChange={e=>s("provider_phone_id",e.target.value)} placeholder="123456789012345"/>
+            <FL>Destinatário do aviso de saída</FL>
+            <FS value={f.destino_saida} onChange={e=>s("destino_saida",e.target.value)}>
+              {DESTINOS.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+            </FS>
           </>
         )}
+
+        <label style={{display:"flex",gap:10,alignItems:"flex-start",background:P.slateL,borderRadius:12,padding:12,cursor:"pointer",marginTop:14}}>
+          <input type="checkbox" checked={f.notify_visitantes} onChange={e=>s("notify_visitantes",e.target.checked)} style={{marginTop:3}}/>
+          <span>
+            <span style={{display:"block",fontWeight:800,fontSize:13,color:P.text}}>📥 Oradores visitantes</span>
+            <span style={{fontSize:11,color:P.sub}}>Orador de outra congregação que vem discursar aqui.</span>
+          </span>
+        </label>
+        {f.notify_visitantes && (
+          <>
+            <FL>Destinatário do aviso de visitante</FL>
+            <FS value={f.destino_visitante} onChange={e=>s("destino_visitante",e.target.value)}>
+              {DESTINOS.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+            </FS>
+            <div style={{fontSize:11,color:P.sub,marginTop:4}}>
+              Para avisar o orador visitante, preencha o WhatsApp dele no próprio registro da visita.
+            </div>
+          </>
+        )}
+
+        <div style={{background:P.amberL,borderRadius:12,padding:12,fontSize:11,color:"#92400E",marginTop:12,lineHeight:1.6}}>
+          O aviso ao responsável usa o <b>WhatsApp do responsável</b> cadastrado na congregação. Se estiver vazio, o telefone geral é usado como reserva e a fila mostra um alerta.
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={{fontWeight:900,fontSize:16,color:P.text}}>Envio</div>
+        <div style={{background:P.slateL,borderRadius:12,padding:12,fontSize:12,color:P.text,marginTop:10,lineHeight:1.6}}>
+          <b>Modo prévia com envio manual.</b> A cada aviso você abre o WhatsApp e envia; depois marca como enviado.
+        </div>
+        <div style={{background:P.roseL,borderRadius:12,padding:12,fontSize:11,color:P.rose,marginTop:10,fontWeight:700,lineHeight:1.6}}>
+          🔒 O envio automático está bloqueado no servidor até que as credenciais do provedor sejam isoladas por congregação.
+          {isPlatformAdmin && " Como administrador da plataforma, você pode liberá-lo apenas para teste."}
+        </div>
+
+        {isPlatformAdmin && (
+          <>
+            <FL>Modo (administrador da plataforma)</FL>
+            <FS value={f.mode} onChange={e=>s("mode",e.target.value)}>
+              <option value="previa">Prévia — revisão manual</option>
+              <option value="automatico">Automático — apenas para teste</option>
+            </FS>
+            <FL>Provedor</FL>
+            <FS value={f.provider} onChange={e=>s("provider",e.target.value)}>
+              <option value="manual">Manual (abre o WhatsApp no aparelho)</option>
+              <option value="meta_cloud">WhatsApp Cloud API (Meta)</option>
+              <option value="webhook">Webhook próprio</option>
+            </FS>
+            {f.provider === "meta_cloud" && (
+              <>
+                <FL>Phone Number ID (Meta)</FL>
+                <FI value={f.provider_phone_id} onChange={e=>s("provider_phone_id",e.target.value)} placeholder="123456789012345"/>
+              </>
+            )}
+          </>
+        )}
+
+        <FL>Número WhatsApp de referência da congregação</FL>
+        <FI value={f.sender_phone} onChange={e=>s("sender_phone",e.target.value)} placeholder="(19) 99999-9999"/>
+        <div style={{fontSize:11,color:P.sub,marginTop:4,lineHeight:1.6}}>
+          Guardado como <b>{normalizePhone(f.sender_phone) || "—"}</b>. É apenas registro de qual número a congregação usa:
+          no modo manual a mensagem sai pelo WhatsApp aberto no aparelho de quem clicar em enviar.
+        </div>
         <FL>Assinatura das mensagens</FL>
         <FI value={f.sender_label} onChange={e=>s("sender_label",e.target.value)} placeholder="— Cristiano (Superintendente de Discursos)"/>
       </div>
@@ -533,27 +600,28 @@ function ConfigView({ tenant, settings, membros, senders, podeConfigurar, toast$
       <div style={card}>
         <div style={{fontWeight:900,fontSize:16,color:P.text}}>Modelos de mensagem</div>
         <div style={{fontSize:11,color:P.sub,marginTop:4,lineHeight:1.6}}>
-          Use <code>{"{campo}"}</code> para inserir dados. Se o campo estiver vazio no arranjo, a linha inteira some da mensagem.
+          Um modelo para cada combinação de tipo de discurso e destinatário. Use <code>{"{campo}"}</code> para inserir dados;
+          se o campo estiver vazio no arranjo, a linha inteira some da mensagem.
         </div>
 
-        <div style={{display:"flex",gap:6,marginTop:12}}>
-          {[["saida","📤 Saída"],["visitante","📥 Visitante"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setPreviewKind(k)}
-              style={{flex:1,background:previewKind===k?P.sky:P.slateL,color:previewKind===k?"#fff":P.sub,border:"none",borderRadius:10,padding:"8px 10px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{l}</button>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:12}}>
+          {COMBINACOES.map(([k,l])=>(
+            <button key={k} onClick={()=>setCombo(k)}
+              style={{background:combo===k?P.sky:P.slateL,color:combo===k?"#fff":P.sub,border:"none",borderRadius:10,padding:"8px 6px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
 
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:10}}>
-          {(previewKind==="saida"?CAMPOS_SAIDA:CAMPOS_VISITANTE).map(c=>(
+          {CAMPOS.map(c=>(
             <span key={c} style={{background:P.skyL,color:P.sky,fontSize:10,fontWeight:700,padding:"3px 7px",borderRadius:7}}>{`{${c}}`}</span>
+          ))}
+          {CAMPOS_APELIDOS.map(c=>(
+            <span key={c} title="apelido antigo, ainda aceito" style={{background:P.slateL,color:P.sub,fontSize:10,fontWeight:700,padding:"3px 7px",borderRadius:7}}>{`{${c}}`}</span>
           ))}
         </div>
 
-        <FT rows={12}
-          value={previewKind==="saida" ? f.template_saida : f.template_visitante}
-          onChange={e=>s(previewKind==="saida"?"template_saida":"template_visitante", e.target.value)}/>
-        <button
-          onClick={()=>s(previewKind==="saida"?"template_saida":"template_visitante", MODELOS_PADRAO[previewKind])}
+        <FT rows={12} value={f[campoModelo]} onChange={e=>s(campoModelo, e.target.value)}/>
+        <button onClick={()=>s(campoModelo, MODELOS_PADRAO[combo])}
           style={{background:"none",border:"none",color:P.sky,fontSize:11,fontWeight:800,cursor:"pointer",padding:"8px 0 0"}}>
           ↺ Restaurar modelo padrão
         </button>
@@ -596,16 +664,45 @@ function ExecucoesView({ execucoes }) {
             <span style={chip(P.slateL,P.sub)}>{r.mode}</span>
           </div>
           <div style={{fontSize:11,color:P.sub,marginTop:6}}>
-            Janela {brDate(r.reference_date)} → {brDate(r.window_end)}
+            Reuniões procuradas: {(r.target_dates||[]).map(brDate).join(" e ") || "nenhuma"}
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+            <span style={chip(P.slateL,P.sub)}>{r.analyzed_count} arranjo(s) analisado(s)</span>
             <span style={chip(P.limeL,"#4D7C0F")}>{r.created_count} novo(s)</span>
             <span style={chip(P.skyL,P.sky)}>{r.updated_count} atualizado(s)</span>
             <span style={chip(P.slateL,P.sub)}>{r.skipped_count} já enviado(s)</span>
             {r.missing_contact_count > 0 && (
-              <span style={chip(P.amberL,"#B45309")}>{r.missing_contact_count} sem número</span>
+              <span style={chip(P.amberL,"#B45309")}>{r.missing_contact_count} sem telefone</span>
+            )}
+            {r.invalid_date_count > 0 && (
+              <span style={chip(P.roseL,P.rose)}>{r.invalid_date_count} com data inválida</span>
+            )}
+            {r.cancelled_count > 0 && (
+              <span style={chip(P.slateL,P.sub)}>{r.cancelled_count} rascunho(s) obsoleto(s) cancelado(s)</span>
             )}
           </div>
+          {(r.issues || []).length > 0 && (
+            <div style={{marginTop:10,background:P.slateL,borderRadius:12,padding:10}}>
+              <div style={{fontSize:11,fontWeight:800,color:P.sub,marginBottom:6}}>PENDÊNCIAS PARA CORRIGIR</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {r.issues.map((issue,i)=>(
+                  <div key={i} style={{fontSize:11,color:P.text,lineHeight:1.5}}>
+                    <span style={chip(
+                      issue.motivo==="data_invalida" ? P.roseL : issue.motivo==="aprovado_obsoleto" ? P.violetL : P.amberL,
+                      issue.motivo==="data_invalida" ? P.rose : issue.motivo==="aprovado_obsoleto" ? P.violet : "#B45309")}>
+                      {issue.motivo==="data_invalida" ? "data inválida"
+                        : issue.motivo==="aprovado_obsoleto" ? "aprovado obsoleto" : "sem telefone"}
+                    </span>{" "}
+                    {issue.tipo === "saida" ? "Saída" : "Visitante"} #{issue.registro_id}
+                    {issue.quem ? ` · ${issue.quem}` : ""}
+                    {issue.congregacao ? ` · ${issue.congregacao}` : ""}
+                    {issue.data ? ` · ${issue.data}` : ""}
+                    {issue.papel ? ` · aviso ao ${issue.papel}` : ""}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>

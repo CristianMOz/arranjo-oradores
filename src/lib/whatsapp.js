@@ -37,10 +37,15 @@ export async function salvarConfigWhatsapp(tenantId, values) {
     p_run_weekday: values.run_weekday,
     p_run_time: values.run_time,
     p_window_days: values.window_days,
+    p_extra_meeting_days: values.extra_meeting_days,
     p_notify_saidas: values.notify_saidas,
     p_notify_visitantes: values.notify_visitantes,
-    p_template_saida: values.template_saida,
-    p_template_visitante: values.template_visitante,
+    p_destino_saida: values.destino_saida,
+    p_destino_visitante: values.destino_visitante,
+    p_template_saida_orador: values.template_saida_orador,
+    p_template_saida_responsavel: values.template_saida_responsavel,
+    p_template_visitante_orador: values.template_visitante_orador,
+    p_template_visitante_responsavel: values.template_visitante_responsavel,
   }));
 }
 
