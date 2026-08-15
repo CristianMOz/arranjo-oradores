@@ -1,16 +1,28 @@
-# React + Vite
+# Arranjo de Oradores
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicativo React/Vite para programação de discursos, preparado para múltiplas congregações no mesmo projeto Supabase.
 
-Currently, two official plugins are available:
+## Segurança e isolamento
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Login real pelo Supabase Auth (e-mail e senha).
+- Cada registro operacional possui `tenant_id`.
+- RLS limita leitura e escrita às congregações do usuário.
+- Consultas e mutações do cliente sempre incluem o `tenant_id` selecionado.
+- Acesso anônimo às tabelas operacionais é revogado.
+- Administradores da plataforma podem criar uma congregação copiando dados selecionados de uma congregação-modelo.
 
-## React Compiler
+## Desenvolvimento
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+npm run lint
+npm test
+npm run build
+```
 
-## Expanding the ESLint configuration
+Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` na Vercel. Somente a chave pública pode ser usada no cliente; nunca exponha `service_role` ou uma secret key.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Migração
+
+A migração está em `supabase/migrations/20260814111500_multi_tenant_foundation.sql`. O procedimento de produção está em [docs/MULTI_TENANT_ROLLOUT.md](docs/MULTI_TENANT_ROLLOUT.md).
