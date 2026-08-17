@@ -501,11 +501,11 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
   const hoje = new Date();
   const [carregando, setCarregando] = useState(true);
   const [tab, setTab] = useState("home");
-  const [esbocos, setEsbocos] = useState(ESBOCOS_INIT);
-  const [oradores, setOradores] = useState(DEMO_MODE ? [] : ORADORES_INIT);
-  const [congregacoes, setCongregacoes] = useState(CONGS_INIT);
-  const [visitantes, setVisitantes] = useState(VISITANTES_INIT);
-  const [saidas, setSaidas] = useState(SAIDAS_INIT);
+  const [esbocos, setEsbocos] = useState(DEMO_MODE ? ESBOCOS_INIT : []);
+  const [oradores, setOradores] = useState(DEMO_MODE ? ORADORES_INIT : []);
+  const [congregacoes, setCongregacoes] = useState(DEMO_MODE ? CONGS_INIT : []);
+  const [visitantes, setVisitantes] = useState(DEMO_MODE ? VISITANTES_INIT : []);
+  const [saidas, setSaidas] = useState(DEMO_MODE ? SAIDAS_INIT : []);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState("");
@@ -526,11 +526,11 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
           db.getAll("visitantes","data"),
           db.getAll("saidas","data"),
         ]);
-        if (eb && eb.length) setEsbocos(eb.map(fromDB.esboco));
-        if (or && or.length) setOradores(or.map(fromDB.orador));
-        if (co && co.length) setCongregacoes(co.map(fromDB.cong));
-        if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
-        if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
+        setEsbocos((eb || []).map(fromDB.esboco));
+        setOradores((or || []).map(fromDB.orador));
+        setCongregacoes((co || []).map(fromDB.cong));
+        setVisitantes((vi || []).map(fromDB.visit));
+        setSaidas((sa || []).map(fromDB.saida));
         setErro("");
       } catch(e) {
         setErro("Configure o Supabase: cole a URL e a chave no topo do código.");
@@ -546,8 +546,8 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
     const interval = setInterval(async () => {
       try {
         const [vi, sa] = await Promise.all([db.getAll("visitantes","data"), db.getAll("saidas","data")]);
-        if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
-        if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
+        setVisitantes((vi || []).map(fromDB.visit));
+        setSaidas((sa || []).map(fromDB.saida));
       } catch { /* a próxima sincronização tentará novamente */ }
     }, 30000);
     return () => clearInterval(interval);
@@ -560,11 +560,11 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
         db.getAll("esbocos"), db.getAll("oradores"), db.getAll("congregacoes"),
         db.getAll("visitantes","data"), db.getAll("saidas","data"),
       ]);
-      if (eb && eb.length) setEsbocos(eb.map(fromDB.esboco));
-      if (or && or.length) setOradores(or.map(fromDB.orador));
-      if (co && co.length) setCongregacoes(co.map(fromDB.cong));
-      if (vi && vi.length) setVisitantes(vi.map(fromDB.visit));
-      if (sa && sa.length) setSaidas(sa.map(fromDB.saida));
+      setEsbocos((eb || []).map(fromDB.esboco));
+      setOradores((or || []).map(fromDB.orador));
+      setCongregacoes((co || []).map(fromDB.cong));
+      setVisitantes((vi || []).map(fromDB.visit));
+      setSaidas((sa || []).map(fromDB.saida));
       toast$("Sincronizado!");
     } catch { toast$("Erro ao sincronizar", false); }
     setTimeout(() => setSincronizando(false), 800);
