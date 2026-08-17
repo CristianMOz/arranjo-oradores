@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { cloneTenant, createTenantDb, loadAccessContext, supabase } from "./lib/supabase";
 import { selectMembership, tenantSlug } from "./lib/tenant-utils";
-
-// ── PALETTE ──────────────────────────────────────────────
-const P = {
-  sky:"#0EA5E9",skyL:"#E0F2FE",teal:"#14B8A6",tealL:"#CCFBF1",
-  violet:"#8B5CF6",violetL:"#EDE9FE",rose:"#F43F5E",roseL:"#FFE4E6",
-  amber:"#F59E0B",amberL:"#FEF3C7",lime:"#84CC16",limeL:"#ECFCCB",
-  slate:"#64748B",slateL:"#F1F5F9",bg:"#F8FAFC",white:"#FFFFFF",
-  text:"#0F172A",sub:"#64748B",border:"#E2E8F0",
-};
-
-const STATUS = {
-  confirmado:{label:"Confirmado",color:P.lime,bg:P.limeL},
-  pendente:{label:"Pendente",color:P.amber,bg:P.amberL},
-  cancelado:{label:"Cancelado",color:P.rose,bg:P.roseL},
-  realizado:{label:"Realizado",color:P.teal,bg:P.tealL},
-};
+import { P, STATUS } from "./lib/theme";
+import { FI, FL, FS } from "./ui/forms";
+import WhatsAppView from "./WhatsAppView";
 
 const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const DIAS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
@@ -301,16 +288,16 @@ const dbDemo = {
 const fromDB = {
   esboco: e => ({ id:e.id, n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ id:o.id, nome:o.nome, cel:o.cel||"", esbocoIds:o.esboco_ids||[], status:o.status }),
-  cong: c => ({ id:c.id, nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", end:c.end||"" }),
-  visit: v => ({ id:v.id, cong:v.cong, dia:v.dia, data:v.data, hora:v.hora, orador:v.orador, esbocoId:v.esboco_id, congregacaoLocal:v.congregacao_local||"", endereco:v.endereco||"", relatorioId:v.relatorio_id||"", status:v.status }),
+  cong: c => ({ id:c.id, nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", whatsapp:c.whatsapp||"", end:c.end||"" }),
+  visit: v => ({ id:v.id, cong:v.cong, dia:v.dia, data:v.data, hora:v.hora, orador:v.orador, oradorTel:v.orador_tel||"", esbocoId:v.esboco_id, congregacaoLocal:v.congregacao_local||"", endereco:v.endereco||"", relatorioId:v.relatorio_id||"", status:v.status }),
   saida: s => ({ id:s.id, data:s.data, cong:s.cong, oradorId:s.orador_id, oradorNome:s.orador_nome||"", esbocoId:s.esboco_id, status:s.status }),
 };
 
 const toDB = {
   esboco: e => ({ n:e.n, tema:e.tema, ultimo:e.ultimo||"" }),
   orador: o => ({ nome:o.nome, cel:o.cel||"", esboco_ids:o.esbocoIds||[], status:o.status }),
-  cong: c => ({ nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", end:c.end||"" }),
-  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
+  cong: c => ({ nome:c.nome, dia:c.dia, hora:c.hora, contato:c.contato||"", tel:c.tel||"", whatsapp:c.whatsapp||"", end:c.end||"" }),
+  visit: v => ({ cong:v.cong, dia:v.dia||"Sábado", data:v.data, hora:v.hora, orador:v.orador, orador_tel:v.oradorTel||"", esboco_id:v.esbocoId||null, congregacao_local:v.congregacaoLocal||"", endereco:v.endereco||"", relatorio_id:v.relatorioId||"", status:v.status }),
   saida: s => ({ data:s.data, cong:s.cong, orador_id:s.oradorId||null, orador_nome:s.oradorNome||"", esboco_id:s.esbocoId||null, status:s.status }),
 };
 
@@ -416,7 +403,7 @@ function AuthenticatedApp() {
     return <NoAccessScreen email={session.user.email} error={accessError} onRefresh={refreshMemberships} onLogout={logout} />;
   }
 
-  return <MainApp key={selected.tenant.id} session={session} tenant={selected.tenant}
+  return <MainApp key={selected.tenant.id} session={session} tenant={selected.tenant} role={selected.role}
     memberships={memberships} isPlatformAdmin={isPlatformAdmin} onTenantChange={selectTenant} onLogout={logout} />;
 }
 
@@ -496,7 +483,7 @@ function TenantAdminView({ sourceTenant }) {
   );
 }
 
-function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, onTenantChange, onLogout }) {
+function MainApp({ session, tenant, role = "viewer", memberships = [], isPlatformAdmin = false, onTenantChange, onLogout }) {
   const db = useMemo(() => DEMO_MODE ? dbDemo : createTenantDb(tenant.id), [tenant.id]);
   const hoje = new Date();
   const [carregando, setCarregando] = useState(true);
@@ -578,10 +565,11 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
     {id:"congs",    icon:"🏠",label:"Congs"},
     {id:"esbocos",  icon:"📑",label:"Esboços"},
     {id:"relatorio",icon:"📊",label:"Relatório"},
+    {id:"whatsapp", icon:"📲",label:"WhatsApp"},
     ...(isPlatformAdmin?[{id:"admin",icon:"⚙️",label:"Admin"}]:[]),
   ];
 
-  const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null};
+  const TAB_MODAL = {home:null,saida:"saida",visitante:"visitante",oradores:"orador",congs:"cong",esbocos:"esboco",relatorio:null,whatsapp:null};
   const ctx = {db,tenant,esbocos,setEsbocos,oradores,setOradores,congregacoes,setCongregacoes,visitantes,setVisitantes,saidas,setSaidas,search,setModal,toast$};
 
   return (
@@ -665,6 +653,7 @@ function MainApp({ session, tenant, memberships = [], isPlatformAdmin = false, o
         {tab==="congs"      && <CongsView {...ctx}/>}
         {tab==="esbocos"    && <EsbocosView esbocos={esbocos} saidas={saidas} visitantes={visitantes} search={search} setModal={setModal}/>}
         {tab==="relatorio"  && <RelatorioView visitantes={visitantes} saidas={saidas} esbocos={esbocos} congregacoes={congregacoes} oradores={oradores} tenant={tenant}/>}
+        {tab==="whatsapp"   && <WhatsAppView tenant={tenant} role={role} userId={session?.user?.id} isPlatformAdmin={isPlatformAdmin} demo={DEMO_MODE} toast$={toast$}/>}
         {tab==="admin"      && <TenantAdminView sourceTenant={tenant}/>}
       </div>
 
@@ -1546,9 +1535,6 @@ function Shell({title,color=P.sky,onClose,onSave,onDel,children}) {
   );
 }
 
-const FL=({children})=><div style={{fontSize:13,fontWeight:800,color:P.text,marginBottom:6,marginTop:12}}>{children}</div>;
-const FI=({style,...p})=><input {...p} style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",color:P.text,...style}}/>;
-const FS=({children,...p})=><select {...p} style={{width:"100%",background:"#fff",border:`2px solid ${P.border}`,borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",color:P.text}}>{children}</select>;
 const StatusPills=({val,onChange})=>(
   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:4}}>
     {Object.entries(STATUS).map(([k,v])=>(
@@ -1651,8 +1637,14 @@ function OradorForm({modal,close,db,setOradores,esbocos,toast$}) {
 
 function VisitanteForm({modal,close,db,tenant,setVisitantes,esbocos,congregacoes,toast$}) {
   const isNew=!modal.data;
-  const [f,setF]=useState(modal.data||{cong:"",dia:tenant.meeting_day||"Sábado",data:"",hora:tenant.meeting_time||"19:00",orador:"",esbocoId:null,congregacaoLocal:tenant.name,endereco:"",relatorioId:"",status:"pendente"});
+  const [f,setF]=useState(modal.data||{cong:"",dia:tenant.meeting_day||"Sábado",data:"",hora:tenant.meeting_time||"19:00",orador:"",oradorTel:"",esbocoId:null,congregacaoLocal:tenant.name,endereco:"",relatorioId:"",status:"pendente"});
+  // A congregação pode não estar cadastrada; nesse caso o nome é digitado à mão.
+  const [outraCong,setOutraCong]=useState(()=>Boolean(modal.data?.cong)&&!congregacoes.some(c=>c.nome===modal.data.cong));
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  const escolherCong=(valor)=>{
+    if(valor==="__outro"){setOutraCong(true);s("cong","");}
+    else{setOutraCong(false);s("cong",valor);}
+  };
   const save = async () => {
     if(!f.cong||!f.data||!f.orador) return toast$("Congregação, data e orador são obrigatórios",false);
     try {
@@ -1668,15 +1660,25 @@ function VisitanteForm({modal,close,db,tenant,setVisitantes,esbocos,congregacoes
   return (
     <Shell title={isNew?"Nova Visita":"Editar Visita"} color={P.violet} onClose={close} onSave={save} onDel={!isNew?del:null}>
       <FL>Congregação Visitante *</FL>
-      <FS value={f.cong} onChange={e=>s("cong",e.target.value)}>
+      <FS value={outraCong?"__outro":f.cong} onChange={e=>escolherCong(e.target.value)}>
         <option value="">Selecionar…</option>
         {congregacoes.map(c=><option key={c.id} value={c.nome}>{c.nome}</option>)}
         <option value="__outro">Outra congregação</option>
       </FS>
-      {f.cong==="__outro"&&<FI value="" onChange={e=>s("cong",e.target.value)} placeholder="Nome da congregação"/>}
+      {outraCong&&(
+        <>
+          <FI value={f.cong} onChange={e=>s("cong",e.target.value)} placeholder="Nome da congregação" style={{marginTop:8}}/>
+          <div style={{fontSize:11,color:P.sub,marginTop:4}}>
+            Congregação fora do cadastro: o lembrete ao responsável ficará sem número.
+          </div>
+        </>
+      )}
       <FL>Data *</FL><FI type="date" value={toIso(f.data)} onChange={e=>s("data",toBr(e.target.value))}/>
       <FL>Hora</FL><FI type="time" value={f.hora} onChange={e=>s("hora",e.target.value)}/>
       <FL>Orador *</FL><FI value={f.orador} onChange={e=>s("orador",e.target.value)} placeholder="Nome do orador visitante"/>
+      <FL>WhatsApp do orador</FL>
+      <FI type="tel" value={f.oradorTel} onChange={e=>s("oradorTel",e.target.value)} placeholder="(19) 99999-9999"/>
+      <div style={{fontSize:11,color:P.sub,marginTop:4}}>Necessário para enviar o lembrete direto ao orador visitante.</div>
       <FL>Tema / Esboço</FL>
       <FS value={f.esbocoId||""} onChange={e=>s("esbocoId",+e.target.value||null)}>
         <option value="">Nenhum</option>
@@ -1734,7 +1736,7 @@ function SaidaForm({modal,close,db,setSaidas,oradores,congregacoes,esbocos,toast
 
 function CongForm({modal,close,db,setCongregacoes,toast$}) {
   const isNew=!modal.data;
-  const [f,setF]=useState(modal.data||{nome:"",dia:"Domingo",hora:"9:00",contato:"",tel:"",end:""});
+  const [f,setF]=useState(modal.data||{nome:"",dia:"Domingo",hora:"9:00",contato:"",tel:"",whatsapp:"",end:""});
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
   const save = async () => {
     if(!f.nome) return toast$("Nome é obrigatório",false);
@@ -1757,7 +1759,14 @@ function CongForm({modal,close,db,setCongregacoes,toast$}) {
       </FS>
       <FL>Horário *</FL><FI value={f.hora} onChange={e=>s("hora",e.target.value)} placeholder="Ex: 9:00"/>
       <FL>Contato *</FL><FI value={f.contato} onChange={e=>s("contato",e.target.value)}/>
-      <FL>Telefone</FL><FI type="tel" value={f.tel} onChange={e=>s("tel",e.target.value)}/>
+      <FL>Telefone geral</FL><FI type="tel" value={f.tel} onChange={e=>s("tel",e.target.value)}/>
+      <FL>WhatsApp do responsável</FL>
+      <FI type="tel" value={f.whatsapp} onChange={e=>s("whatsapp",e.target.value)} placeholder="(19) 99999-9999"/>
+      <div style={{fontSize:11,color:P.sub,marginTop:4}}>
+        {f.whatsapp?.trim()
+          ? "Os lembretes ao responsável vão para este número."
+          : "Em branco, os lembretes usam o telefone geral — que pode não ser WhatsApp."}
+      </div>
       <FL>Endereço</FL><FI value={f.end} onChange={e=>s("end",e.target.value)}/>
     </Shell>
   );
